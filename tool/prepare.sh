@@ -3,19 +3,20 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-# 1) Platform folders
-if [ ! -d android ] || [ ! -d ios ]; then
-  flutter create --org tz.co.kibo --project-name kibo_trade --platforms android,ios .
-fi
-rm -f test/widget_test.dart
-
-# 2) Local plugin 'kibo_signer' (certificate signing on Android + iOS).
+# The plugin must exist BEFORE the app is generated: pubspec.yaml depends on it by path.
+# 1) Local plugin 'kibo_signer' (certificate signing on Android + iOS).
 #    Generated from Flutter's own plugin template so Gradle/Pod config always matches your Flutter version.
 if [ ! -d packages/kibo_signer ]; then
   mkdir -p packages
-  flutter create --template=plugin --org tz.co.kibo --project-name kibo_signer --platforms android,ios packages/kibo_signer
+  flutter create --template=plugin --org tz.co.kibo --project-name kibo_signer --no-pub --platforms android,ios packages/kibo_signer
   rm -rf packages/kibo_signer/example packages/kibo_signer/test
 fi
+# 2) Platform folders
+if [ ! -d android ] || [ ! -d ios ]; then
+  flutter create --org tz.co.kibo --project-name kibo_trade --no-pub --platforms android,ios .
+fi
+rm -f test/widget_test.dart
+
 KT=$(find packages/kibo_signer/android -name '*.kt' -path '*main*' | head -1)
 PKG=$(grep -m1 '^package ' "$KT" | sed 's/package //; s/;//' | tr -d '\r ')
 CLASS=$(basename "$KT" .kt)
