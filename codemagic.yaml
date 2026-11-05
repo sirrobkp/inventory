@@ -1,0 +1,47 @@
+workflows:
+  android-apk:
+    name: Kibo Trade - Android APK
+    instance_type: linux_x2
+    max_build_duration: 30
+    environment:
+      flutter: stable
+      java: 17
+    scripts:
+      - name: Prepare platforms (project files, signing plugin, permissions)
+        script: bash tool/prepare.sh
+      - name: Get packages
+        script: flutter pub get
+      - name: Analyze (informational)
+        script: flutter analyze || true
+      - name: Build release APK
+        script: flutter build apk --release
+    artifacts:
+      - build/app/outputs/flutter-apk/*.apk
+      - pubspec.lock
+
+  ios-ipa-altstore:
+    name: Kibo Trade - iOS IPA (unsigned, for AltStore/AltServer)
+    instance_type: mac_mini_m2
+    max_build_duration: 45
+    environment:
+      flutter: stable
+      xcode: latest
+      cocoapods: default
+    scripts:
+      - name: Prepare platforms (project files, signing plugin, permissions)
+        script: bash tool/prepare.sh
+      - name: Get packages
+        script: flutter pub get
+      - name: Analyze (informational)
+        script: flutter analyze || true
+      - name: Build iOS without code signing
+        script: flutter build ios --release --no-codesign
+      - name: Package unsigned IPA
+        script: |
+          cd build/ios/iphoneos
+          rm -rf Payload && mkdir Payload
+          cp -R Runner.app Payload/
+          zip -qry ../KiboTrade-unsigned.ipa Payload
+    artifacts:
+      - build/ios/KiboTrade-unsigned.ipa
+      - pubspec.lock

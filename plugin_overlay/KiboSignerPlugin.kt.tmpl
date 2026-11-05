@@ -1,0 +1,51 @@
+package __PKG__
+
+import android.util.Base64
+import io.flutter.embedding.engine.plugins.FlutterPlugin
+import io.flutter.plugin.common.MethodCall
+import io.flutter.plugin.common.MethodChannel
+import java.io.FileInputStream
+import java.security.KeyStore
+import java.security.PrivateKey
+import java.security.Signature
+import java.security.cert.X509Certificate
+
+/** Signs payloads with a PKCS#12 (.pfx) certificate: SHA1withRSA -> Base64, and returns the cert serial (hex). */
+class KiboSignerPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
+    private lateinit var channel: MethodChannel
+
+    override fun onAttachedToEngine(binding: FlutterPlugin.FlutterPluginBinding) {
+        channel = MethodChannel(binding.binaryMessenger, "kibo/signer")
+        channel.setMethodCallHandler(this)
+    }
+
+    override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {
+        channel.setMethodCallHandler(null)
+    }
+
+    override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
+        try {
+            val path = call.argument<String>("path")!!
+            val pw = call.argument<String>("password")!!.toCharArray()
+            val ks = KeyStore.getInstance("PKCS12")
+            FileInputStream(path).use { ks.load(it, pw) }
+            val alias = ks.aliases().toList().first { ks.isKeyEntry(it) }
+            when (call.method) {
+                "sign" -> {
+                    val key = ks.getKey(alias, pw) as PrivateKey
+                    val sig = Signature.getInstance("SHA1withRSA")
+                    sig.initSign(key)
+                    sig.update(call.argument<String>("data")!!.toByteArray(Charsets.UTF_8))
+                    result.success(Base64.encodeToString(sig.sign(), Base64.NO_WRAP))
+                }
+                "serial" -> {
+                    val cert = ks.getCertificate(alias) as X509Certificate
+                    result.success(cert.serialNumber.toString(16).uppercase())
+                }
+                else -> result.notImplemented()
+            }
+        } catch (e: Exception) {
+            result.error("SIGN_ERROR", e.message, null)
+        }
+    }
+}
