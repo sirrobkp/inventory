@@ -22,7 +22,11 @@ PKG=$(grep -m1 '^package ' "$KT" | sed 's/package //; s/;//' | tr -d '\r ')
 CLASS=$(basename "$KT" .kt)
 if [ "$CLASS" != "KiboSignerPlugin" ]; then echo "Unexpected plugin class $CLASS"; exit 1; fi
 sed "s/__PKG__/$PKG/" plugin_overlay/KiboSignerPlugin.kt.tmpl > "$KT"
-SW=$(find packages/kibo_signer/ios -name '*.swift' | head -1)
+SW=$(find packages/kibo_signer/ios -name 'KiboSignerPlugin.swift' | head -1 || true)
+if [ -z "$SW" ]; then   # older template layout: Classes/<name>.swift (never Package.swift)
+  SW=$(find packages/kibo_signer/ios -name '*.swift' ! -name 'Package.swift' | head -1 || true)
+fi
+if [ -z "$SW" ]; then echo "Could not find the iOS plugin source file"; find packages/kibo_signer/ios; exit 1; fi
 cp plugin_overlay/KiboSignerPlugin.swift "$SW"
 echo "Signing plugin installed: $KT / $SW"
 
@@ -37,7 +41,11 @@ s = s.replace('<application', open('android_overlay/permissions.xml').read() + '
 open(p, 'w').write(s)
 PY
 fi
-G=$(ls android/app/build.gradle.kts android/app/build.gradle 2>/dev/null | head -1)
+G=""
+for f in android/app/build.gradle.kts android/app/build.gradle; do
+  if [ -z "$G" ] && [ -f "$f" ]; then G="$f"; fi
+done
+if [ -z "$G" ]; then echo "android/app/build.gradle(.kts) not found"; exit 1; fi
 sed -i.bak -E 's/minSdk = flutter\.minSdkVersion/minSdk = maxOf(23, flutter.minSdkVersion)/; s/minSdkVersion flutter\.minSdkVersion/minSdkVersion Math.max(23, flutter.minSdkVersion)/' "$G" && rm -f "$G.bak"
 
 # 4) iOS: usage descriptions + deployment target 15.5 (ML Kit barcode scanner needs it)
