@@ -32,16 +32,36 @@ workflows:
         script: bash tool/prepare.sh
       - name: Get packages
         script: flutter pub get
+      - name: Generate iOS config and Podfile (no build yet)
+        script: flutter build ios --config-only --release --no-codesign || true
+      - name: Disable code signing for app and pods
+        script: bash tool/patch_ios_nosign.sh
       - name: Analyze (informational)
         script: flutter analyze || true
-      - name: Build iOS without code signing
-        script: flutter build ios --release --no-codesign
+      - name: Build with xcodebuild directly (signing disabled)
+        script: |
+          set -uo pipefail
+          mkdir -p build
+          if ! xcodebuild -workspace ios/Runner.xcworkspace -scheme Runner -configuration Release \
+              -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath build/ios_derived \
+              CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" DEVELOPMENT_TEAM="" \
+              build > build/xcodebuild.log 2>&1; then
+            echo "=============== REAL XCODE ERRORS ==============="
+            grep -nE "error:|requires a development team|Signing for|Code Sign" build/xcodebuild.log | head -40
+            echo "=============== LAST 60 LINES ==============="
+            tail -n 60 build/xcodebuild.log
+            exit 1
+          fi
+          tail -n 5 build/xcodebuild.log
       - name: Package unsigned IPA
         script: |
-          cd build/ios/iphoneos
-          rm -rf Payload && mkdir Payload
-          cp -R Runner.app Payload/
-          zip -qry ../KiboTrade-unsigned.ipa Payload
+          APP=build/ios_derived/Build/Products/Release-iphoneos/Runner.app
+          test -d "$APP" || { echo "Runner.app not found"; find build/ios_derived -name "*.app" -maxdepth 6; exit 1; }
+          rm -rf build/Payload && mkdir -p build/Payload
+          cp -R "$APP" build/Payload/
+          (cd build && zip -qry KiboTrade-unsigned.ipa Payload)
+          ls -lh build/KiboTrade-unsigned.ipa
     artifacts:
-      - build/ios/KiboTrade-unsigned.ipa
+      - build/KiboTrade-unsigned.ipa
+      - build/xcodebuild.log
       - pubspec.lock
