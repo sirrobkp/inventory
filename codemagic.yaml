@@ -32,10 +32,6 @@ workflows:
         script: bash tool/prepare.sh
       - name: Get packages
         script: flutter pub get
-      - name: Generate iOS config and Podfile (no build yet)
-        script: flutter build ios --config-only --release --no-codesign || true
-      - name: Disable code signing for app and pods
-        script: bash tool/patch_ios_nosign.sh
       - name: Analyze (informational)
         script: flutter analyze || true
       - name: Build iOS without code signing
