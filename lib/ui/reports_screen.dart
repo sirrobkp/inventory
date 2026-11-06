@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
-import 'package:share_plus/share_plus.dart';
+import '../services/share_helper.dart';
 
 import '../data/app_state.dart';
 import '../data/models.dart';
@@ -54,7 +54,8 @@ class _ReportsScreenState extends State<ReportsScreen> {
     setState(() => _busy = true);
     try {
       final f = await make();
-      await Share.shareXFiles([XFile(f.path)]);
+      if (!mounted) return;
+      await shareFile(context, f.path);
     } catch (e) {
       if (mounted) toast(context, 'Export failed: $e');
     }
@@ -85,6 +86,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
                 ('Revenue (net of VAT)', st.revenueNet, false),
                 ('Cost of goods sold', -st.cogs, false),
                 ('Gross profit', st.grossProfit, true),
+                ('Stock adjustments', st.adjustments, false),
                 ('Operating expenses', -st.expensesNet, false),
                 ('Net profit before tax', st.netProfit, true),
               ]),
@@ -106,7 +108,9 @@ class _ReportsScreenState extends State<ReportsScreen> {
         const SizedBox(height: 20),
         Text('EXPORT FOR TRA', style: t(10, w: FontWeight.w800, c: K.muted, ls: 1.8)),
         const SizedBox(height: 10),
-        LimeButton('Financial statements (PDF)', icon: Ic.pdf, busy: _busy, onTap: () => _export(() => s.reports.statementsPdf(from, to, s.cfg))),
+        LimeButton('Income statement, cash flows & balance sheet (PDF)', icon: Ic.pdf, busy: _busy, onTap: () => _export(() => s.reports.financialStatementsPdf(from, to, s.cfg))),
+        const SizedBox(height: 10),
+        LimeButton('VAT working paper (PDF)', icon: Ic.pdf, outline: true, onTap: _busy ? null : () => _export(() => s.reports.vatPdf(from, to, s.cfg))),
         const SizedBox(height: 10),
         LimeButton('Sales schedule - VAT output (CSV)', icon: Ic.table, outline: true, onTap: _busy ? null : () => _export(() => s.reports.salesCsv(from, to))),
         const SizedBox(height: 10),
@@ -115,6 +119,37 @@ class _ReportsScreenState extends State<ReportsScreen> {
         LimeButton('Z-reports as submitted (XML)', icon: Ic.code, outline: true, onTap: _busy ? null : () => _export(() => s.reports.zXml(from, to))),
         const SizedBox(height: 12),
         Text('Z-reports and receipts are uploaded to TRA automatically. The VAT return itself is filed in TRA Tax Online Services - use these schedules as the supporting figures and check them against TRA\'s current templates.', style: t(10, w: FontWeight.w500, c: K.dim, h: 1.5)),
+        const SizedBox(height: 22),
+        SectionTitle('Capital & other entries', action: '+ Add', onAction: () => showSheet(context, const _LedgerForm())),
+        Text('Record opening capital, loans, owner drawings, VAT paid to TRA and equipment bought. The cash flow statement and balance sheet depend on these.', style: t(10, w: FontWeight.w500, c: K.dim, h: 1.5)),
+        const SizedBox(height: 10),
+        FutureBuilder<List<Map<String, Object?>>>(
+          future: s.repo.ledger('2000-01-01', tt),
+          builder: (_, snap) {
+            final list = snap.data ?? [];
+            if (list.isEmpty) return const Glass(child: Empty('No entries yet.'));
+            return Glass(
+              padding: EdgeInsets.zero,
+              child: Column(children: [
+                for (final e in list.take(15))
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(14, 10, 6, 10),
+                    child: Row(children: [
+                      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(_ledgerTypes[e['type']] ?? '${e['type']}', style: t(12)), Text('${e['date']}  ${e['note'] ?? ''}', maxLines: 1, overflow: TextOverflow.ellipsis, style: t(10, w: FontWeight.w500, c: K.muted))])),
+                      Text(money((e['amount'] as num).toDouble()), style: t(12)),
+                      IconButton(
+                        icon: const Icon(Ic.trash, size: 16, color: K.dim),
+                        onPressed: () async {
+                          await s.repo.deleteLedger(e['id'] as int);
+                          if (mounted) setState(() {});
+                        },
+                      ),
+                    ]),
+                  ),
+              ]),
+            );
+          },
+        ),
         const SizedBox(height: 22),
         SectionTitle('Expenses', action: '+ Add', onAction: () => showSheet(context, const _ExpenseForm())),
         FutureBuilder<List<Expense>>(
@@ -189,7 +224,7 @@ class _ExpenseFormState extends State<_ExpenseForm> {
         dropdownColor: K.sheet,
         decoration: dec('Category'),
         style: t(13, w: FontWeight.w500),
-        items: [for (final c in ['Rent', 'Wages & salaries', 'Utilities', 'Transport', 'Marketing', 'Repairs', 'Licences & fees', 'Other']) DropdownMenuItem(value: c, child: Text(c))],
+        items: [for (final c in ['Depreciation', 'Rent', 'Wages & salaries', 'Utilities', 'Transport', 'Marketing', 'Repairs', 'Licences & fees', 'Other']) DropdownMenuItem(value: c, child: Text(c))],
         onChanged: (v) => setState(() => cat = v ?? cat),
       ),
       const SizedBox(height: 12),
@@ -205,4 +240,51 @@ class _ExpenseFormState extends State<_ExpenseForm> {
       }),
     ]);
   }
+}
+
+const _ledgerTypes = {
+  'capital': 'Capital introduced (cash)',
+  'drawings': 'Owner drawings',
+  'loan_in': 'Loan received',
+  'loan_out': 'Loan repaid',
+  'vat_paid': 'VAT paid to TRA (negative = refund)',
+  'asset_purchase': 'Equipment / fixed assets bought',
+};
+
+class _LedgerForm extends StatefulWidget {
+  const _LedgerForm();
+  @override
+  State<_LedgerForm> createState() => _LedgerFormState();
+}
+
+class _LedgerFormState extends State<_LedgerForm> {
+  String type = 'capital';
+  final amount = TextEditingController();
+  final note = TextEditingController();
+
+  @override
+  Widget build(BuildContext context) => Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text('Capital & other entry', style: t(18, w: FontWeight.w800)),
+        const SizedBox(height: 14),
+        DropdownButtonFormField<String>(
+          initialValue: type,
+          dropdownColor: K.sheet,
+          isExpanded: true,
+          decoration: dec('Type'),
+          style: t(13, w: FontWeight.w500),
+          items: [for (final e in _ledgerTypes.entries) DropdownMenuItem(value: e.key, child: Text(e.value))],
+          onChanged: (v) => setState(() => type = v ?? type),
+        ),
+        const SizedBox(height: 12),
+        TextField(controller: amount, keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: true), style: t(13, w: FontWeight.w500), decoration: dec('Amount (TZS)')),
+        const SizedBox(height: 12),
+        TextField(controller: note, style: t(13, w: FontWeight.w500), decoration: dec('Note (optional)')),
+        const SizedBox(height: 18),
+        LimeButton('Save entry', icon: Ic.check, onTap: () async {
+          final a = double.tryParse(amount.text.replaceAll(',', ''));
+          if (a == null || a == 0) return toast(context, 'Enter the amount');
+          await context.read<AppState>().repo.addLedger(DateTime.now(), type, a, note.text.trim());
+          if (context.mounted) Navigator.pop(context);
+        }),
+      ]);
 }

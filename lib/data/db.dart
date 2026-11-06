@@ -11,7 +11,16 @@ class Db {
   static Future<Database> _open() async {
     return openDatabase(
       await path,
-      version: 1,
+      version: 2,
+      onUpgrade: (d, oldV, newV) async {
+        if (oldV < 2) {
+          await d.execute("ALTER TABLE stock_movements ADD COLUMN kind TEXT DEFAULT ''");
+          await d.execute('ALTER TABLE stock_movements ADD COLUMN value REAL DEFAULT 0');
+          await _v2(d);
+          await d.execute("UPDATE stock_movements SET kind = CASE WHEN reason='Opening stock' THEN 'opening' WHEN reason='Sale' THEN 'sale' WHEN reason LIKE 'Purchase%' THEN 'purchase' ELSE 'adjust' END");
+          await d.execute('UPDATE stock_movements SET value = delta * COALESCE((SELECT cost FROM products p WHERE p.id = stock_movements.product_id), 0)');
+        }
+      },
       onConfigure: (d) async => d.execute('PRAGMA foreign_keys = ON'),
       onCreate: (d, v) async {
         await d.execute('CREATE TABLE settings(key TEXT PRIMARY KEY, value TEXT)');
@@ -37,7 +46,8 @@ class Db {
           id INTEGER PRIMARY KEY AUTOINCREMENT, sale_id INTEGER NOT NULL REFERENCES sales(id) ON DELETE CASCADE,
           tax_code TEXT, net REAL, vat REAL, gross REAL)''');
         await d.execute('''CREATE TABLE stock_movements(
-          id INTEGER PRIMARY KEY AUTOINCREMENT, product_id INTEGER, delta REAL, reason TEXT, ref TEXT, created_at TEXT)''');
+          id INTEGER PRIMARY KEY AUTOINCREMENT, product_id INTEGER, delta REAL, reason TEXT, ref TEXT, created_at TEXT,
+          kind TEXT DEFAULT '', value REAL DEFAULT 0)''');
         await d.execute('''CREATE TABLE purchases(
           id INTEGER PRIMARY KEY AUTOINCREMENT, date TEXT, product_id INTEGER, product_name TEXT, qty REAL, unit_cost REAL,
           net REAL, vat REAL, gross REAL, tax_code TEXT, supplier TEXT, supplier_tin TEXT, invoice_no TEXT, efd_receipt TEXT)''');
@@ -46,7 +56,15 @@ class Db {
           net REAL, vat REAL, gross REAL, supplier_tin TEXT, ref TEXT)''');
         await d.execute('''CREATE TABLE z_reports(
           day TEXT PRIMARY KEY, znum TEXT, xml TEXT, status TEXT, ack_msg TEXT, submitted_at TEXT)''');
+        await _v2(d);
       },
     );
+  }
+
+  /// v2: books (capital/loans/VAT paid/equipment ledger) and payroll for SDL.
+  static Future<void> _v2(DatabaseExecutor d) async {
+    await d.execute('CREATE TABLE IF NOT EXISTS equity_ledger(id INTEGER PRIMARY KEY AUTOINCREMENT, date TEXT, type TEXT, amount REAL, note TEXT)');
+    await d.execute("CREATE TABLE IF NOT EXISTS employees(id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, tin TEXT DEFAULT '', nida TEXT DEFAULT '', kind TEXT DEFAULT 'permanent', basic REAL DEFAULT 0, allowances REAL DEFAULT 0, active INTEGER DEFAULT 1)");
+    await d.execute('CREATE TABLE IF NOT EXISTS payroll(id INTEGER PRIMARY KEY AUTOINCREMENT, period TEXT NOT NULL, employee_id INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE, basic REAL, allowances REAL, other REAL DEFAULT 0, UNIQUE(period, employee_id))');
   }
 }

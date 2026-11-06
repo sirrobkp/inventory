@@ -6,6 +6,7 @@ import '../data/app_state.dart';
 import '../data/models.dart';
 import '../data/repo.dart';
 import 'reports_screen.dart';
+import 'sdl_screen.dart';
 import 'settings_screen.dart';
 import 'icons.dart';
 import 'theme.dart';
@@ -157,6 +158,20 @@ class _TraScreenState extends State<TraScreen> {
                 const Icon(Ic.fileText, color: K.lime),
                 const SizedBox(width: 14),
                 Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text('Financial statements', style: t(13)), const SizedBox(height: 3), Text('Income statement, VAT return schedules, Z-reports', style: t(10, w: FontWeight.w500, c: K.muted))])),
+                const Icon(Ic.chevron, color: K.dim),
+              ]),
+            ),
+          ),
+          const SizedBox(height: 10),
+          GestureDetector(
+            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SdlScreen())),
+            child: Container(
+              padding: const EdgeInsets.all(18),
+              decoration: BoxDecoration(color: K.card, borderRadius: BorderRadius.circular(24), border: Border.all(color: K.border)),
+              child: Row(children: [
+                const Icon(Ic.table, color: K.lime),
+                const SizedBox(width: 14),
+                Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text('SDL return', style: t(13)), const SizedBox(height: 3), Text('Payroll, SDL due, export filled TRA Excel template', style: t(10, w: FontWeight.w500, c: K.muted))])),
                 const Icon(Ic.chevron, color: K.dim),
               ]),
             ),

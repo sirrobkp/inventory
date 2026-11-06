@@ -50,7 +50,7 @@ class Repo {
       if (p.id == null) {
         final id = await t.insert('products', p.toMap());
         if (p.stock != 0) {
-          await t.insert('stock_movements', {'product_id': id, 'delta': p.stock, 'reason': 'Opening stock', 'ref': '', 'created_at': DateTime.now().toIso8601String()});
+          await t.insert('stock_movements', {'product_id': id, 'delta': p.stock, 'reason': 'Opening stock', 'ref': '', 'created_at': DateTime.now().toIso8601String(), 'kind': 'opening', 'value': r2(p.stock * p.cost)});
         }
       } else {
         final m = p.toMap()..remove('stock'); // stock only changes through movements
@@ -66,8 +66,9 @@ class Repo {
   Future<void> adjustStock(int id, double delta, String reason) async {
     final d = await _d;
     await d.transaction((t) async {
+      final cost = ((await t.query('products', columns: ['cost'], where: 'id=?', whereArgs: [id])).first['cost'] as num?)?.toDouble() ?? 0;
       await t.rawUpdate('UPDATE products SET stock = stock + ?, updated_at=? WHERE id=?', [delta, DateTime.now().toIso8601String(), id]);
-      await t.insert('stock_movements', {'product_id': id, 'delta': delta, 'reason': reason, 'ref': '', 'created_at': DateTime.now().toIso8601String()});
+      await t.insert('stock_movements', {'product_id': id, 'delta': delta, 'reason': reason, 'ref': '', 'created_at': DateTime.now().toIso8601String(), 'kind': 'adjust', 'value': r2(delta * cost)});
     });
   }
 
@@ -80,7 +81,7 @@ class Repo {
       final vat = r2(net * (taxRates[cur.taxCode] ?? 0));
       final newCost = cur.stock <= 0 ? unitCostExcl : r2((cur.stock * cur.cost + qty * unitCostExcl) / (cur.stock + qty));
       await t.rawUpdate('UPDATE products SET stock = stock + ?, cost = ?, updated_at=? WHERE id=?', [qty, newCost, DateTime.now().toIso8601String(), p.id]);
-      await t.insert('stock_movements', {'product_id': p.id, 'delta': qty, 'reason': 'Purchase $invoiceNo', 'ref': supplier, 'created_at': DateTime.now().toIso8601String()});
+      await t.insert('stock_movements', {'product_id': p.id, 'delta': qty, 'reason': 'Purchase $invoiceNo', 'ref': supplier, 'created_at': DateTime.now().toIso8601String(), 'kind': 'purchase', 'value': net});
       await t.insert('purchases', {
         'date': dayFmt.format(date),
         'product_id': p.id,
@@ -100,6 +101,7 @@ class Repo {
   }
 
   Future<void> addExpense({required DateTime date, required String category, required String description, required double gross, required double vat, String supplierTin = '', String ref = ''}) async {
+    if (category == 'Depreciation') vat = 0;
     await (await _d).insert('expenses', {
       'date': dayFmt.format(date),
       'category': category,
@@ -208,7 +210,7 @@ class Repo {
           'tax_code': p.taxCode,
         });
         await t.rawUpdate('UPDATE products SET stock = stock - ?, updated_at=? WHERE id=?', [l.qty, now.toIso8601String(), p.id]);
-        await t.insert('stock_movements', {'product_id': p.id, 'delta': -l.qty, 'reason': 'Sale', 'ref': fiscal ? '$gc' : 'NF-$saleId', 'created_at': now.toIso8601String()});
+        await t.insert('stock_movements', {'product_id': p.id, 'delta': -l.qty, 'reason': 'Sale', 'ref': fiscal ? '$gc' : 'NF-$saleId', 'created_at': now.toIso8601String(), 'kind': 'sale', 'value': -r2(l.qty * p.cost)});
       }
       return saleId;
     });
@@ -301,6 +303,7 @@ class Repo {
     final e = (await d.rawQuery('SELECT COALESCE(SUM(net),0) n, COALESCE(SUM(vat),0) v FROM expenses WHERE date BETWEEN ? AND ?', [from, to])).first;
     final pu = (await d.rawQuery('SELECT COALESCE(SUM(net),0) n, COALESCE(SUM(vat),0) v FROM purchases WHERE date BETWEEN ? AND ?', [from, to])).first;
     final sv = (await d.rawQuery('SELECT COALESCE(SUM(stock*cost),0) v FROM products WHERE active=1')).first;
+    final adj = (((await d.rawQuery("SELECT COALESCE(SUM(value),0) a FROM stock_movements WHERE kind='adjust' AND substr(created_at,1,10) BETWEEN ? AND ?", [from, to])).first['a']) as num).toDouble();
     return Statement(
       salesByClass: byClass,
       cogs: (s['c'] as num).toDouble(),
@@ -312,6 +315,7 @@ class Repo {
       paymentTotals: pay,
       receiptCount: s['n'] as int,
       stockValue: (sv['v'] as num).toDouble(),
+      adjustments: adj,
     );
   }
 
@@ -355,5 +359,72 @@ class Repo {
   Future<Map<String, Object?>?> zFor(String day) async {
     final r = await (await _d).query('z_reports', where: 'day=?', whereArgs: [day]);
     return r.isEmpty ? null : r.first;
+  }
+
+  // ------------------------------------------------------------- books / ledger
+  double _g(Object? v) => (v as num?)?.toDouble() ?? 0;
+
+  Future<Cum> cumAsAt(String upTo) async {
+    final d = await _d;
+    Future<Map<String, Object?>> one(String sql) async => (await d.rawQuery(sql, [upTo])).first;
+    final s = await one('SELECT COALESCE(SUM(total_incl),0) g, COALESCE(SUM(total_excl),0) n, COALESCE(SUM(total_vat),0) v, COALESCE(SUM(cogs),0) c FROM sales WHERE day<=?');
+    final p = await one('SELECT COALESCE(SUM(gross),0) g, COALESCE(SUM(net),0) n, COALESCE(SUM(vat),0) v FROM purchases WHERE date<=?');
+    final e = await one("SELECT COALESCE(SUM(net),0) n, COALESCE(SUM(vat),0) v, COALESCE(SUM(CASE WHEN category='Depreciation' THEN net ELSE 0 END),0) dep, COALESCE(SUM(CASE WHEN category<>'Depreciation' THEN gross ELSE 0 END),0) cash FROM expenses WHERE date<=?");
+    final m = await one("SELECT COALESCE(SUM(CASE WHEN kind='opening' THEN value ELSE 0 END),0) o, COALESCE(SUM(CASE WHEN kind='adjust' THEN value ELSE 0 END),0) a FROM stock_movements WHERE substr(created_at,1,10)<=?");
+    final l = <String, double>{};
+    for (final r in await d.rawQuery('SELECT type, SUM(amount) a FROM equity_ledger WHERE date<=? GROUP BY type', [upTo])) {
+      l[r['type'] as String] = _g(r['a']);
+    }
+    return Cum(
+      salesGross: _g(s['g']), salesNet: _g(s['n']), salesVat: _g(s['v']), cogs: _g(s['c']),
+      purchGross: _g(p['g']), purchNet: _g(p['n']), purchVat: _g(p['v']),
+      expNet: _g(e['n']), expVat: _g(e['v']), depreciation: _g(e['dep']), expCash: _g(e['cash']),
+      openingStock: _g(m['o']), adjustments: _g(m['a']),
+      capital: l['capital'] ?? 0, drawings: l['drawings'] ?? 0, loanIn: l['loan_in'] ?? 0, loanOut: l['loan_out'] ?? 0,
+      vatPaid: l['vat_paid'] ?? 0, assetBuy: l['asset_purchase'] ?? 0,
+    );
+  }
+
+  Future<void> addLedger(DateTime date, String type, double amount, String note) async {
+    await (await _d).insert('equity_ledger', {'date': dayFmt.format(date), 'type': type, 'amount': amount, 'note': note});
+  }
+
+  Future<List<Map<String, Object?>>> ledger(String from, String to) async => (await _d).query('equity_ledger', where: 'date BETWEEN ? AND ?', whereArgs: [from, to], orderBy: 'date DESC, id DESC');
+
+  Future<void> deleteLedger(int id) async {
+    await (await _d).delete('equity_ledger', where: 'id=?', whereArgs: [id]);
+  }
+
+  // ------------------------------------------------------------ employees / SDL
+  Future<List<Employee>> employees() async => ((await (await _d).query('employees', where: 'active=1', orderBy: 'name COLLATE NOCASE')).map(Employee.fromMap)).toList();
+
+  Future<void> saveEmployee(Employee e) async {
+    final d = await _d;
+    if (e.id == null) {
+      await d.insert('employees', e.toMap());
+    } else {
+      await d.update('employees', e.toMap(), where: 'id=?', whereArgs: [e.id]);
+    }
+  }
+
+  Future<void> archiveEmployee(int id) async {
+    await (await _d).update('employees', {'active': 0}, where: 'id=?', whereArgs: [id]);
+  }
+
+  /// One line per active employee for [period] (yyyy-MM); defaults to the employee's standing pay.
+  Future<List<PayLine>> payrollFor(String period) async {
+    final d = await _d;
+    final rows = await d.query('payroll', where: 'period=?', whereArgs: [period]);
+    final by = {for (final r in rows) r['employee_id'] as int: r};
+    final out = <PayLine>[];
+    for (final e in await employees()) {
+      final r = by[e.id];
+      out.add(r == null ? PayLine(e, e.basic, e.allowances, 0) : PayLine(e, _g(r['basic']), _g(r['allowances']), _g(r['other'])));
+    }
+    return out;
+  }
+
+  Future<void> savePayroll(String period, int employeeId, double basic, double allowances, double other) async {
+    await (await _d).insert('payroll', {'period': period, 'employee_id': employeeId, 'basic': basic, 'allowances': allowances, 'other': other}, conflictAlgorithm: ConflictAlgorithm.replace);
   }
 }

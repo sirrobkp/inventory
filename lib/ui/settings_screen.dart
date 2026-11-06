@@ -6,7 +6,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:print_bluetooth_thermal/print_bluetooth_thermal.dart';
 import 'package:provider/provider.dart';
-import 'package:share_plus/share_plus.dart';
+import '../services/share_helper.dart';
 
 import '../data/app_state.dart';
 import '../data/db.dart';
@@ -90,7 +90,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final dir = await getApplicationDocumentsDirectory();
     final dst = File('${dir.path}/kibo_trade_backup_${DateTime.now().millisecondsSinceEpoch}.db');
     await File(await Db.path).copy(dst.path);
-    await Share.shareXFiles([XFile(dst.path)], text: 'Kibo Trade database backup');
+    if (!mounted) return;
+    await shareFile(context, dst.path, text: 'Kibo Trade database backup');
   }
 
   @override

@@ -280,7 +280,10 @@ class Empty extends StatelessWidget {
 Future<T?> showSheet<T>(BuildContext context, Widget child) => showModalBottomSheet<T>(
       context: context,
       isScrollControlled: true,
+      useSafeArea: true,
+      barrierColor: const Color(0xB3000000),
       backgroundColor: K.sheet,
+      surfaceTintColor: Colors.transparent,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(30))),
       builder: (_) => Padding(
         padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),

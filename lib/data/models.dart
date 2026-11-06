@@ -184,9 +184,10 @@ class Statement {
     required this.paymentTotals,
     required this.receiptCount,
     required this.stockValue,
+    this.adjustments = 0,
   });
   final Map<String, VatLine> salesByClass; // code -> net/vat/gross
-  final double cogs, purchasesNet, purchasesVat, expensesNet, expensesVat, stockValue;
+  final double cogs, purchasesNet, purchasesVat, expensesNet, expensesVat, stockValue, adjustments; // adjustments: signed stock gain/(loss)
   final Map<String, double> expensesByCat, paymentTotals;
   final int receiptCount;
 
@@ -194,7 +195,7 @@ class Statement {
   double get outputVat => salesByClass.values.fold(0, (a, b) => a + b.vat);
   double get revenueGross => salesByClass.values.fold(0, (a, b) => a + b.gross);
   double get grossProfit => revenueNet - cogs;
-  double get netProfit => grossProfit - expensesNet;
+  double get netProfit => grossProfit + adjustments - expensesNet;
   double get inputVat => purchasesVat + expensesVat;
   double get vatPayable => outputVat - inputVat;
 }
@@ -231,4 +232,45 @@ class Expense {
         (m['supplier_tin'] as String?) ?? '',
         (m['ref'] as String?) ?? '',
       );
+}
+
+class Employee {
+  Employee({this.id, required this.name, this.tin = '', this.nida = '', this.kind = 'permanent', this.basic = 0, this.allowances = 0});
+  int? id;
+  String name, tin, nida, kind; // kind: permanent | casual
+  double basic, allowances;
+  factory Employee.fromMap(Map<String, Object?> m) => Employee(
+        id: m['id'] as int?,
+        name: m['name'] as String,
+        tin: (m['tin'] as String?) ?? '',
+        nida: (m['nida'] as String?) ?? '',
+        kind: (m['kind'] as String?) ?? 'permanent',
+        basic: _n(m['basic']),
+        allowances: _n(m['allowances']),
+      );
+  Map<String, Object?> toMap() => {if (id != null) 'id': id, 'name': name, 'tin': tin, 'nida': nida, 'kind': kind, 'basic': basic, 'allowances': allowances, 'active': 1};
+}
+
+class PayLine {
+  PayLine(this.emp, this.basic, this.allowances, this.other);
+  final Employee emp;
+  final double basic, allowances, other;
+  double get gross => basic + allowances + other;
+}
+
+/// Cumulative position of the books up to (and including) a date.
+/// Everything is derived from sales, purchases, expenses, stock movements and the capital ledger,
+/// so Assets = Liabilities + Equity holds by construction.
+class Cum {
+  Cum({this.salesGross = 0, this.salesNet = 0, this.salesVat = 0, this.cogs = 0, this.purchGross = 0, this.purchNet = 0, this.purchVat = 0, this.expNet = 0, this.expVat = 0, this.depreciation = 0, this.expCash = 0, this.openingStock = 0, this.adjustments = 0, this.capital = 0, this.drawings = 0, this.loanIn = 0, this.loanOut = 0, this.vatPaid = 0, this.assetBuy = 0});
+  final double salesGross, salesNet, salesVat, cogs, purchGross, purchNet, purchVat, expNet, expVat, depreciation, expCash, openingStock, adjustments, capital, drawings, loanIn, loanOut, vatPaid, assetBuy;
+
+  double get cash => capital + loanIn - loanOut + salesGross - purchGross - expCash - vatPaid - drawings - assetBuy;
+  double get inventory => openingStock + purchNet - cogs + adjustments;
+  double get fixedAssets => assetBuy - depreciation;
+  double get vatNet => salesVat - purchVat - expVat - vatPaid; // >0 payable, <0 receivable
+  double get loans => loanIn - loanOut;
+  double get profit => salesNet - cogs + adjustments - expNet;
+  double get equity => capital + openingStock - drawings + profit;
+  double get imbalance => (cash + inventory + fixedAssets + (vatNet < 0 ? -vatNet : 0)) - (loans + (vatNet > 0 ? vatNet : 0)) - equity;
 }

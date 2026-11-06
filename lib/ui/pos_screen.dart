@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:qr_flutter/qr_flutter.dart';
@@ -6,6 +7,7 @@ import 'package:qr_flutter/qr_flutter.dart';
 import '../data/app_state.dart';
 import '../data/models.dart';
 import '../data/tax.dart';
+import 'scanner_listener.dart';
 import 'scanner_screen.dart';
 import 'icons.dart';
 import 'theme.dart';
@@ -33,6 +35,21 @@ class PosScreen extends StatelessWidget {
     );
   }
 
+  /// External scanner: add the scanned product straight to the cart.
+  Future<void> _onExternalScan(BuildContext context, String code) async {
+    final s = context.read<AppState>();
+    final p = await s.repo.findByCode(code);
+    if (!context.mounted) return;
+    if (p == null) {
+      HapticFeedback.heavyImpact();
+      return toast(context, 'Unknown barcode $code');
+    }
+    final err = s.addToCart(p);
+    HapticFeedback.lightImpact();
+    SystemSound.play(SystemSoundType.click);
+    toast(context, err ?? 'Added: ${p.name}');
+  }
+
   void _catalogue(BuildContext context) => showSheet(context, const _Catalogue());
 
   @override
@@ -53,7 +70,9 @@ class PosScreen extends StatelessWidget {
     });
     final total = s.cartTotal;
 
-    return ListView(padding: const EdgeInsets.only(bottom: 130), children: [
+    return ScannerListener(
+      onScan: (code) => _onExternalScan(context, code),
+      child: ListView(padding: const EdgeInsets.only(bottom: 130), children: [
       Header(title: 'Point of Sale', subtitle: s.registered ? 'VFD ${s.cfg['serial'] ?? ''} - ${s.online ? 'Online' : 'Offline'}' : 'Non-fiscal mode - VFD not registered'),
       Padding(
         padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -119,7 +138,8 @@ class PosScreen extends StatelessWidget {
           ),
         ]),
       ),
-    ]);
+    ]),
+    );
   }
 }
 
