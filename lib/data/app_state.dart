@@ -28,6 +28,9 @@ class AppState extends ChangeNotifier {
   Timer? _timer;
   StreamSubscription<List<ConnectivityResult>>? _conn;
 
+  /// Income-tax rate for the books (company 30% by default; editable in Settings).
+  double get taxRate => (double.tryParse(cfg['income_tax_rate'] ?? '') ?? 30) / 100;
+
   bool get registered => (cfg['regid'] ?? '').isNotEmpty;
   int get lowStockCount => products.where((p) => p.low).length;
   List<String> get categories => (products.map((p) => p.category).toSet().toList()..sort());
@@ -151,8 +154,8 @@ class AppState extends ChangeNotifier {
     await refresh();
   }
 
-  Future<void> receiveStock(Product p, {required double qty, required double unitCost, String supplier = '', String supplierTin = '', String invoiceNo = '', String efdReceipt = '', DateTime? date}) async {
-    await repo.receiveStock(p, qty: qty, unitCostExcl: unitCost, supplier: supplier, supplierTin: supplierTin, invoiceNo: invoiceNo, efdReceipt: efdReceipt, date: date ?? DateTime.now());
+  Future<void> receiveStock(Product p, {required double qty, required double unitCost, String supplier = '', String supplierTin = '', String invoiceNo = '', String efdReceipt = '', DateTime? date, bool paid = true}) async {
+    await repo.receiveStock(p, qty: qty, unitCostExcl: unitCost, supplier: supplier, supplierTin: supplierTin, invoiceNo: invoiceNo, efdReceipt: efdReceipt, date: date ?? DateTime.now(), paid: paid);
     await refresh();
   }
 
@@ -164,8 +167,8 @@ class AppState extends ChangeNotifier {
     await refresh();
   }
 
-  Future<void> addExpense({required DateTime date, required String category, required String description, required double gross, required double vat, String tin = '', String ref = ''}) async {
-    await repo.addExpense(date: date, category: category, description: description, gross: gross, vat: vat, supplierTin: tin, ref: ref);
+  Future<void> addExpense({required DateTime date, required String category, required String description, required double gross, required double vat, String tin = '', String ref = '', bool paid = true}) async {
+    await repo.addExpense(date: date, category: category, description: description, gross: gross, vat: vat, supplierTin: tin, ref: ref, paid: paid);
     await refresh();
   }
 }

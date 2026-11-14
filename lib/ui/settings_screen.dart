@@ -27,6 +27,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
   late final bizAddr = TextEditingController(text: s.cfg['biz_address'] ?? s.cfg['address'] ?? '');
   late final bizPhone = TextEditingController(text: s.cfg['biz_phone'] ?? s.cfg['mobile'] ?? '');
   late final footer = TextEditingController(text: s.cfg['receipt_footer'] ?? 'Thank you for shopping with us');
+  late final po = TextEditingController(text: s.cfg['po_box'] ?? '');
+  late final regNo = TextEditingController(text: s.cfg['reg_no'] ?? '');
+  late final directors = TextEditingController(text: s.cfg['directors'] ?? '');
+  late final activity = TextEditingController(text: s.cfg['principal_activity'] ?? '');
+  late final auditor = TextEditingController(text: s.cfg['auditor_name'] ?? '');
+  late final auditorAddr = TextEditingController(text: s.cfg['auditor_address'] ?? '');
+  late final financeHead = TextEditingController(text: s.cfg['finance_head'] ?? '');
+  late final taxRate = TextEditingController(text: s.cfg['income_tax_rate'] ?? '30');
+  late String entity = s.cfg['entity_type'] ?? 'company';
   late final tin = TextEditingController(text: s.cfg['tin'] ?? '');
   late final certKey = TextEditingController(text: s.cfg['cert_key'] ?? '');
   late final base = TextEditingController(text: s.cfg['tra_base'] ?? TraService.defaultBase);
@@ -43,7 +52,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _saveBiz() async {
-    await s.saveCfg({'biz_name': bizName.text.trim(), 'biz_address': bizAddr.text.trim(), 'biz_phone': bizPhone.text.trim(), 'receipt_footer': footer.text.trim()});
+    await s.saveCfg({
+      'biz_name': bizName.text.trim(),
+      'biz_address': bizAddr.text.trim(),
+      'biz_phone': bizPhone.text.trim(),
+      'receipt_footer': footer.text.trim(),
+      'po_box': po.text.trim(),
+      'reg_no': regNo.text.trim(),
+      'directors': directors.text.trim(),
+      'principal_activity': activity.text.trim(),
+      'auditor_name': auditor.text.trim(),
+      'auditor_address': auditorAddr.text.trim(),
+      'finance_head': financeHead.text.trim(),
+      'income_tax_rate': taxRate.text.trim().isEmpty ? '30' : taxRate.text.trim(),
+      'entity_type': entity,
+    });
     if (mounted) toast(context, 'Saved');
   }
 
@@ -107,6 +130,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
         f(bizAddr, 'Address'),
         f(bizPhone, 'Phone', k: TextInputType.phone),
         f(footer, 'Receipt footer'),
+        h('Company profile & tax (financial statements)'),
+        Wrap(spacing: 8, children: [Chip2('Company (Ltd)', selected: entity == 'company', onTap: () => setState(() => entity = 'company')), Chip2('Sole proprietor', selected: entity == 'sole', onTap: () => setState(() => entity = 'sole'))]),
+        const SizedBox(height: 12),
+        f(po, 'P.O. Box'),
+        f(regNo, 'Registration / incorporation number'),
+        Padding(padding: const EdgeInsets.only(bottom: 12), child: TextField(controller: directors, minLines: 2, maxLines: 5, style: t(13, w: FontWeight.w500), decoration: dec('Directors - one per line: Name, Nationality'))),
+        Padding(padding: const EdgeInsets.only(bottom: 12), child: TextField(controller: activity, minLines: 1, maxLines: 3, style: t(13, w: FontWeight.w500), decoration: dec('Principal activity'))),
+        f(auditor, 'Auditor firm name'),
+        f(auditorAddr, 'Auditor address'),
+        f(financeHead, 'Head of finance / accountant name'),
+        f(taxRate, 'Income tax rate % (company 30)', k: const TextInputType.numberWithOptions(decimal: true)),
         LimeButton('Save business info', icon: Ic.check, outline: true, onTap: _saveBiz),
         h('TRA VFD registration'),
         Glass(radius: 18, padding: const EdgeInsets.all(14), child: Text(

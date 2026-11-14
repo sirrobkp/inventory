@@ -259,18 +259,44 @@ class PayLine {
 }
 
 /// Cumulative position of the books up to (and including) a date.
-/// Everything is derived from sales, purchases, expenses, stock movements and the capital ledger,
-/// so Assets = Liabilities + Equity holds by construction.
+/// Everything is derived from sales, purchases, expenses, stock movements, the fixed-asset register and the
+/// capital/tax ledger, so Assets = Liabilities + Equity holds by construction (verified by simulation).
 class Cum {
-  Cum({this.salesGross = 0, this.salesNet = 0, this.salesVat = 0, this.cogs = 0, this.purchGross = 0, this.purchNet = 0, this.purchVat = 0, this.expNet = 0, this.expVat = 0, this.depreciation = 0, this.expCash = 0, this.openingStock = 0, this.adjustments = 0, this.capital = 0, this.drawings = 0, this.loanIn = 0, this.loanOut = 0, this.vatPaid = 0, this.assetBuy = 0});
-  final double salesGross, salesNet, salesVat, cogs, purchGross, purchNet, purchVat, expNet, expVat, depreciation, expCash, openingStock, adjustments, capital, drawings, loanIn, loanOut, vatPaid, assetBuy;
+  Cum({
+    this.salesGross = 0, this.salesCredit = 0, this.salesNet = 0, this.salesVat = 0, this.cogs = 0,
+    this.purchGross = 0, this.purchNet = 0, this.purchVat = 0, this.purchUnpaid = 0,
+    this.expNet = 0, this.expVat = 0, this.expGross = 0, this.expUnpaid = 0, this.auditUnpaid = 0,
+    this.openingStock = 0, this.adjustments = 0,
+    this.capital = 0, this.drawings = 0, this.loanIn = 0, this.loanOut = 0, this.vatPaid = 0, this.taxPaid = 0,
+    this.recCollected = 0, this.supPaid = 0, this.accPaid = 0,
+    this.assetCost = 0, this.depreciation = 0, this.taxRate = 0.30,
+    this.costByClass = const {}, this.depByClass = const {},
+  });
+  final double salesGross, salesCredit, salesNet, salesVat, cogs, purchGross, purchNet, purchVat, purchUnpaid, expNet, expVat, expGross, expUnpaid, auditUnpaid, openingStock, adjustments, capital, drawings, loanIn, loanOut, vatPaid, taxPaid, recCollected, supPaid, accPaid, assetCost, depreciation, taxRate;
+  final Map<String, double> costByClass, depByClass;
 
-  double get cash => capital + loanIn - loanOut + salesGross - purchGross - expCash - vatPaid - drawings - assetBuy;
+  double get cash => capital + loanIn - loanOut + (salesGross - salesCredit) + recCollected - (purchGross - purchUnpaid) - supPaid - (expGross - expUnpaid) - accPaid - vatPaid - taxPaid - drawings - assetCost;
+  double get receivables => salesCredit - recCollected;
   double get inventory => openingStock + purchNet - cogs + adjustments;
-  double get fixedAssets => assetBuy - depreciation;
-  double get vatNet => salesVat - purchVat - expVat - vatPaid; // >0 payable, <0 receivable
+  double get fixedAssets => assetCost - depreciation;
+  double get vatNet => salesVat - purchVat - expVat - vatPaid; // >0 payable, <0 recoverable
+  double get tradePayables => purchUnpaid - supPaid;
+  double get accrued => expUnpaid - accPaid;
   double get loans => loanIn - loanOut;
-  double get profit => salesNet - cogs + adjustments - expNet;
-  double get equity => capital + openingStock - drawings + profit;
-  double get imbalance => (cash + inventory + fixedAssets + (vatNet < 0 ? -vatNet : 0)) - (loans + (vatNet > 0 ? vatNet : 0)) - equity;
+  double get pbt => salesNet - cogs + adjustments - expNet - depreciation; // profit before tax
+  double get tax => pbt > 0 ? pbt * taxRate : 0;
+  double get netTax => tax - taxPaid; // >0 payable, <0 provisional tax paid (asset)
+  double get profitAfterTax => pbt - tax;
+  double get equity => capital + openingStock - drawings + profitAfterTax;
+  double get imbalance =>
+      (cash + inventory + fixedAssets + receivables + (vatNet < 0 ? -vatNet : 0) + (netTax < 0 ? -netTax : 0)) -
+      (loans + tradePayables + accrued + (vatNet > 0 ? vatNet : 0) + (netTax > 0 ? netTax : 0)) -
+      equity;
+}
+
+/// Statement figures for one reporting period plus the opening/closing books.
+class Period {
+  Period(this.st, this.open, this.close);
+  final Statement st;
+  final Cum open, close;
 }

@@ -17,7 +17,7 @@ Local: `bash tool/prepare.sh && flutter pub get && flutter run` (the pubspec pat
 - **POS**: continuous camera barcode scanning, USB/Bluetooth keyboard-wedge scanner support (catalogue search box), cart, VAT split per class, payment methods (cash/mobile money/card/cheque), optional customer TIN, stock check inside the DB transaction.
 - **TRA**: on every approved sale, one DB transaction assigns GC/DC counters + verification number, deducts stock, queues the receipt; upload starts immediately and retries every 60 s and when connectivity returns. Receipts are printed straight away (verification code + QR) and uploaded in GC order. Z-reports auto-submit for past days once all receipts are accepted; manual "close day" for today.
 - **Printing**: ESC/POS over Bluetooth (58/80 mm) with QR, or PDF via Android print/share.
-- **Statements**: Income statement, VAT working paper, stock valuation (PDF); sales schedule and purchases schedule (CSV); Z-reports (XML).
+- **Statements**: full financial-statements pack following a Tanzanian IFRS-for-SMEs audited layout (cover, company information, directors' report, responsibilities, head-of-finance declaration, auditor's report placeholder, statements of financial position / profit or loss / changes in equity / cash flows (indirect), notes 1-16, inventory schedule); VAT working paper (PDF); sales and purchases schedules (CSV); Z-reports (XML); SDL return (Excel, fills the TRA template).
 
 ## Before you go live (READ THIS)
 1. **TRA must approve you.** A VFD is only legal after TRA onboarding: you obtain a test account, the current EFDMS/VFD API specification, a certificate (.pfx), its password and CERTKEY. Production use needs TRA's acceptance of your software.

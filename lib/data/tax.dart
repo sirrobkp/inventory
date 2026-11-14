@@ -17,7 +17,7 @@ const payTypes = {
   'Mobile money': 'EMONEY',
   'Card': 'CCARD',
   'Cheque': 'CHEQUE',
-  'Invoice': 'INVOICE',
+  'Credit (pay later)': 'INVOICE',
 };
 
 double r2(double v) => (v * 100).roundToDouble() / 100;

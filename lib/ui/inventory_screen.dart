@@ -298,6 +298,7 @@ class _StockSheetState extends State<_StockSheet> {
   final invoice = TextEditingController();
   final efd = TextEditingController();
   String reason = 'Stock count correction';
+  bool paid = true;
 
   Future<void> _save() async {
     final s = context.read<AppState>();
@@ -306,7 +307,7 @@ class _StockSheetState extends State<_StockSheet> {
     if (widget.receive) {
       final c = double.tryParse(cost.text.replaceAll(',', ''));
       if (q < 0 || c == null || c < 0) return toast(context, 'Enter quantity and unit cost (excl. VAT)');
-      await s.receiveStock(widget.p, qty: q, unitCost: c, supplier: supplier.text.trim(), supplierTin: tin.text.trim(), invoiceNo: invoice.text.trim(), efdReceipt: efd.text.trim());
+      await s.receiveStock(widget.p, qty: q, unitCost: c, supplier: supplier.text.trim(), supplierTin: tin.text.trim(), invoiceNo: invoice.text.trim(), efdReceipt: efd.text.trim(), paid: paid);
     } else {
       await s.adjustStock(widget.p, q, reason);
     }
@@ -326,6 +327,7 @@ class _StockSheetState extends State<_StockSheet> {
         f(supplier, 'Supplier'),
         Row(children: [Expanded(child: f(tin, 'Supplier TIN')), const SizedBox(width: 10), Expanded(child: f(invoice, 'Invoice no.'))]),
         f(efd, 'Supplier EFD receipt no.', hint: 'needed to claim input VAT'),
+        SwitchListTile(contentPadding: EdgeInsets.zero, title: Text('Already paid to supplier', style: t(13)), subtitle: Text(paid ? 'Cash goes out now' : 'Recorded as trade payable until you add a payment entry', style: t(10, w: FontWeight.w500, c: K.muted)), value: paid, onChanged: (v) => setState(() => paid = v)),
         Text('Input VAT is computed from this product\'s VAT class and feeds the VAT return.', style: t(10, w: FontWeight.w500, c: K.dim)),
       ] else
         DropdownButtonFormField<String>(

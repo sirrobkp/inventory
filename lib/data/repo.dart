@@ -2,6 +2,7 @@ import 'package:intl/intl.dart';
 import 'package:sqflite/sqflite.dart';
 
 import 'db.dart';
+import 'fixed_assets.dart';
 import 'models.dart';
 import 'tax.dart';
 
@@ -73,7 +74,7 @@ class Repo {
   }
 
   /// Receive stock from a supplier; records the purchase (input VAT) and updates weighted-average cost.
-  Future<void> receiveStock(Product p, {required double qty, required double unitCostExcl, required String supplier, required String supplierTin, required String invoiceNo, required String efdReceipt, required DateTime date}) async {
+  Future<void> receiveStock(Product p, {required double qty, required double unitCostExcl, required String supplier, required String supplierTin, required String invoiceNo, required String efdReceipt, required DateTime date, bool paid = true}) async {
     final d = await _d;
     await d.transaction((t) async {
       final cur = Product.fromMap((await t.query('products', where: 'id=?', whereArgs: [p.id])).first);
@@ -96,12 +97,12 @@ class Repo {
         'supplier_tin': supplierTin,
         'invoice_no': invoiceNo,
         'efd_receipt': efdReceipt,
+        'paid': paid ? 1 : 0,
       });
     });
   }
 
-  Future<void> addExpense({required DateTime date, required String category, required String description, required double gross, required double vat, String supplierTin = '', String ref = ''}) async {
-    if (category == 'Depreciation') vat = 0;
+  Future<void> addExpense({required DateTime date, required String category, required String description, required double gross, required double vat, String supplierTin = '', String ref = '', bool paid = true}) async {
     await (await _d).insert('expenses', {
       'date': dayFmt.format(date),
       'category': category,
@@ -111,6 +112,7 @@ class Repo {
       'gross': gross,
       'supplier_tin': supplierTin,
       'ref': ref,
+      'paid': paid ? 1 : 0,
     });
   }
 
@@ -364,25 +366,57 @@ class Repo {
   // ------------------------------------------------------------- books / ledger
   double _g(Object? v) => (v as num?)?.toDouble() ?? 0;
 
-  Future<Cum> cumAsAt(String upTo) async {
+  Future<Cum> cumAsAt(String upTo, {double taxRate = 0.30}) async {
     final d = await _d;
     Future<Map<String, Object?>> one(String sql) async => (await d.rawQuery(sql, [upTo])).first;
-    final s = await one('SELECT COALESCE(SUM(total_incl),0) g, COALESCE(SUM(total_excl),0) n, COALESCE(SUM(total_vat),0) v, COALESCE(SUM(cogs),0) c FROM sales WHERE day<=?');
-    final p = await one('SELECT COALESCE(SUM(gross),0) g, COALESCE(SUM(net),0) n, COALESCE(SUM(vat),0) v FROM purchases WHERE date<=?');
-    final e = await one("SELECT COALESCE(SUM(net),0) n, COALESCE(SUM(vat),0) v, COALESCE(SUM(CASE WHEN category='Depreciation' THEN net ELSE 0 END),0) dep, COALESCE(SUM(CASE WHEN category<>'Depreciation' THEN gross ELSE 0 END),0) cash FROM expenses WHERE date<=?");
+    final s = await one("SELECT COALESCE(SUM(total_incl),0) g, COALESCE(SUM(CASE WHEN payment_type='INVOICE' THEN total_incl ELSE 0 END),0) cr, COALESCE(SUM(total_excl),0) n, COALESCE(SUM(total_vat),0) v, COALESCE(SUM(cogs),0) c FROM sales WHERE day<=?");
+    final p = await one('SELECT COALESCE(SUM(gross),0) g, COALESCE(SUM(net),0) n, COALESCE(SUM(vat),0) v, COALESCE(SUM(CASE WHEN paid=0 THEN gross ELSE 0 END),0) u FROM purchases WHERE date<=?');
+    final e = await one("SELECT COALESCE(SUM(net),0) n, COALESCE(SUM(vat),0) v, COALESCE(SUM(gross),0) g, COALESCE(SUM(CASE WHEN paid=0 THEN gross ELSE 0 END),0) u, COALESCE(SUM(CASE WHEN paid=0 AND category='Audit & other professional fees' THEN gross ELSE 0 END),0) au FROM expenses WHERE date<=?");
     final m = await one("SELECT COALESCE(SUM(CASE WHEN kind='opening' THEN value ELSE 0 END),0) o, COALESCE(SUM(CASE WHEN kind='adjust' THEN value ELSE 0 END),0) a FROM stock_movements WHERE substr(created_at,1,10)<=?");
     final l = <String, double>{};
     for (final r in await d.rawQuery('SELECT type, SUM(amount) a FROM equity_ledger WHERE date<=? GROUP BY type', [upTo])) {
       l[r['type'] as String] = _g(r['a']);
     }
+    final on = DateTime.parse(upTo);
+    final cost = <String, double>{}, dep = <String, double>{};
+    var costT = 0.0, depT = 0.0;
+    for (final r in await d.query('assets', where: 'date<=?', whereArgs: [upTo])) {
+      final a = Asset.fromMap(r);
+      final ad = a.accDepAt(on);
+      cost[a.cls] = (cost[a.cls] ?? 0) + a.cost;
+      dep[a.cls] = (dep[a.cls] ?? 0) + ad;
+      costT += a.cost;
+      depT += ad;
+    }
     return Cum(
-      salesGross: _g(s['g']), salesNet: _g(s['n']), salesVat: _g(s['v']), cogs: _g(s['c']),
-      purchGross: _g(p['g']), purchNet: _g(p['n']), purchVat: _g(p['v']),
-      expNet: _g(e['n']), expVat: _g(e['v']), depreciation: _g(e['dep']), expCash: _g(e['cash']),
+      salesGross: _g(s['g']), salesCredit: _g(s['cr']), salesNet: _g(s['n']), salesVat: _g(s['v']), cogs: _g(s['c']),
+      purchGross: _g(p['g']), purchNet: _g(p['n']), purchVat: _g(p['v']), purchUnpaid: _g(p['u']),
+      expNet: _g(e['n']), expVat: _g(e['v']), expGross: _g(e['g']), expUnpaid: _g(e['u']), auditUnpaid: _g(e['au']),
       openingStock: _g(m['o']), adjustments: _g(m['a']),
       capital: l['capital'] ?? 0, drawings: l['drawings'] ?? 0, loanIn: l['loan_in'] ?? 0, loanOut: l['loan_out'] ?? 0,
-      vatPaid: l['vat_paid'] ?? 0, assetBuy: l['asset_purchase'] ?? 0,
+      vatPaid: l['vat_paid'] ?? 0, taxPaid: (l['provisional_tax'] ?? 0) + (l['tax_paid'] ?? 0),
+      recCollected: l['receivable_collected'] ?? 0, supPaid: l['supplier_paid'] ?? 0, accPaid: l['accrued_paid'] ?? 0,
+      assetCost: costT, depreciation: depT, taxRate: taxRate, costByClass: cost, depByClass: dep,
     );
+  }
+
+  /// Statement + opening (day before [from]) and closing ([to]) books for one reporting period.
+  Future<Period> period(DateTime from, DateTime to, double taxRate) async {
+    final st = await statement(dayFmt.format(from), dayFmt.format(to));
+    final open = await cumAsAt(dayFmt.format(from.subtract(const Duration(days: 1))), taxRate: taxRate);
+    final close = await cumAsAt(dayFmt.format(to), taxRate: taxRate);
+    return Period(st, open, close);
+  }
+
+  // ----------------------------------------------------------- fixed assets
+  Future<List<Asset>> assets() async => (await (await _d).query('assets', orderBy: 'date DESC, id DESC')).map(Asset.fromMap).toList();
+
+  Future<void> addAsset(DateTime date, String cls, String description, double cost) async {
+    await (await _d).insert('assets', {'date': dayFmt.format(date), 'cls': cls, 'description': description, 'cost': cost});
+  }
+
+  Future<void> deleteAsset(int id) async {
+    await (await _d).delete('assets', where: 'id=?', whereArgs: [id]);
   }
 
   Future<void> addLedger(DateTime date, String type, double amount, String note) async {

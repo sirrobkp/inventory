@@ -236,6 +236,7 @@ class _PaymentSheetState extends State<_PaymentSheet> {
     final s = context.read<AppState>();
     final nav = Navigator.of(context);
     final host = widget.host;
+    if (payTypes[method] == 'INVOICE' && name.text.trim().isEmpty) return toast(context, 'Enter the customer name for a credit sale');
     setState(() => busy = true);
     try {
       final sale = await s.approveSale(payment: payTypes[method]!, custName: name.text.trim(), custTin: tin.text.trim(), mobile: mobile.text.trim());
@@ -260,7 +261,7 @@ class _PaymentSheetState extends State<_PaymentSheet> {
       const SizedBox(height: 4),
       Text(money(widget.total), style: t(28, w: FontWeight.w800, ls: -1.2, c: K.lime)),
       const SizedBox(height: 16),
-      Wrap(spacing: 8, runSpacing: 8, children: [for (final m in payTypes.keys.where((k) => k != 'Invoice')) Chip2(m, selected: method == m, onTap: () => setState(() => method = m))]),
+      Wrap(spacing: 8, runSpacing: 8, children: [for (final m in payTypes.keys) Chip2(m, selected: method == m, onTap: () => setState(() => method = m))]),
       if (method == 'Cash') ...[
         const SizedBox(height: 14),
         TextField(controller: tendered, keyboardType: TextInputType.number, onChanged: (_) => setState(() {}), style: t(14, w: FontWeight.w600), decoration: dec('Cash received (TZS)')),
