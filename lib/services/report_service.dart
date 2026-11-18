@@ -10,6 +10,8 @@ import '../data/fixed_assets.dart';
 import '../data/models.dart';
 import '../data/repo.dart';
 import '../data/tax.dart';
+import 'fs_export.dart';
+import 'fs_model.dart';
 
 String _n(num v) => NumberFormat('#,##0.00', 'en_US').format(v);
 final _wf = NumberFormat('#,##0', 'en_US');
@@ -42,7 +44,7 @@ class ReportService {
     final rows = <List<Object?>>[
       ['Date', 'Time', 'Receipt No (GC)', 'Daily counter', 'Verification code', 'Z number', 'Customer name', 'Customer TIN', 'Payment', 'Net (excl VAT)', 'VAT', 'Gross (incl VAT)', 'Fiscal', 'TRA status', 'TRA ack'],
       for (final e in s)
-        [e.day, DateFormat('HH:mm:ss').format(e.createdAt), e.fiscal ? e.gc : '', e.fiscal ? e.dc : '', e.rctvnum, e.znum, e.customerName, e.customerId, e.paymentType, _n(e.totalExcl), _n(e.totalVat), _n(e.totalIncl), e.fiscal ? 'Y' : 'N', e.uploadStatus, e.ackMsg ?? ''],
+        [e.day, DateFormat('HH:mm:ss').format(e.createdAt), e.fiscal ? e.number : '', e.fiscal ? e.dc : '', e.rctvnum, e.znum, e.customerName, e.customerId, e.paymentType, _n(e.totalExcl), _n(e.totalVat), _n(e.totalIncl), e.fiscal ? 'Y' : 'N', e.uploadStatus, e.ackMsg ?? ''],
     ];
     return _write('sales_schedule_${_tag(from, to)}.csv', csv(rows));
   }
@@ -52,7 +54,7 @@ class ReportService {
     final p = await repo.purchases(f, t);
     final e = await repo.expenses(f, t);
     final rows = <List<Object?>>[
-      ['Date', 'Type', 'Supplier', 'Supplier TIN', 'Invoice / ref', 'Supplier EFD receipt', 'Description', 'Net', 'VAT (input)', 'Gross'],
+      ['Date', 'Type', 'Supplier', 'Supplier TIN', 'Invoice / ref', 'Supplier EFD verification code', 'Description', 'Net', 'VAT (input)', 'Gross'],
       for (final x in p) [x.date, 'Stock purchase', x.supplier, x.supplierTin, x.invoiceNo, x.efdReceipt, x.product, _n(x.net), _n(x.vat), _n(x.gross)],
       for (final x in e) [x.date, 'Expense: ${x.category}', '', x.supplierTin, x.ref, '', x.description, _n(x.net), _n(x.vat), _n(x.gross)],
     ];
@@ -71,9 +73,9 @@ class ReportService {
   }
 
   // ------------------------------------------------------------------ PDF helpers
-  pw.Widget _h(String t) => pw.Padding(padding: const pw.EdgeInsets.only(top: 14, bottom: 5), child: pw.Text(t, style: pw.TextStyle(fontSize: 11.5, fontWeight: pw.FontWeight.bold)));
+  pw.Widget _pwH(String t) => pw.Padding(padding: const pw.EdgeInsets.only(top: 14, bottom: 5), child: pw.Text(t, style: pw.TextStyle(fontSize: 11.5, fontWeight: pw.FontWeight.bold)));
 
-  pw.Widget _row(String l, String r, {bool bold = false, int indent = 0, bool topLine = false}) => pw.Container(
+  pw.Widget _pwRow(String l, String r, {bool bold = false, int indent = 0, bool topLine = false}) => pw.Container(
         decoration: topLine ? const pw.BoxDecoration(border: pw.Border(top: pw.BorderSide(width: 0.6))) : null,
         padding: pw.EdgeInsets.only(top: 3, bottom: 3, left: indent * 14.0),
         child: pw.Row(mainAxisAlignment: pw.MainAxisAlignment.spaceBetween, children: [
@@ -98,25 +100,16 @@ class ReportService {
   static const _financeCat = 'Bank charges & interest';
   static const _adminOrder = ['Audit & other professional fees', 'Travelling', 'Cleaning', 'Communication', 'Rent', 'Legal & other professional fees', 'Tender expenses', 'Office meals', 'Printing & stationery', 'Repair & maintenance', 'Salary & wages', 'Security', 'Water & electricity'];
 
-  pw.Widget _para(String t, {double size = 9.5, bool bold = false}) => pw.Padding(
-      padding: const pw.EdgeInsets.only(bottom: 7),
-      child: pw.Text(t, textAlign: pw.TextAlign.justify, style: pw.TextStyle(fontSize: size, lineSpacing: 2.5, fontWeight: bold ? pw.FontWeight.bold : pw.FontWeight.normal)));
-
-  pw.Widget _title(String t) => pw.Padding(padding: const pw.EdgeInsets.only(bottom: 10), child: pw.Text(t, style: pw.TextStyle(fontSize: 13, fontWeight: pw.FontWeight.bold)));
-
-  pw.Widget _table(List<String> headers, List<List<String>> data) => pw.TableHelper.fromTextArray(
-        headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 8),
-        cellStyle: const pw.TextStyle(fontSize: 8),
-        headers: headers,
-        data: data,
-        cellAlignments: {for (var i = 1; i < headers.length; i++) i: pw.Alignment.centerRight},
-        headerAlignments: {for (var i = 1; i < headers.length; i++) i: pw.Alignment.centerRight},
-      );
+  Block _para(String t, {double size = 9.5, bool bold = false}) => BPara(t, size: size, bold: bold);
+  Block _title(String t) => BTitle(t);
+  Block _h(String t) => BHead(t);
+  Block _row(String l, String v, {bool bold = false, int indent = 0, bool topLine = false}) => BRow(l, v, bold: bold, indent: indent, topLine: topLine);
+  Block _table(List<String> headers, List<List<String>> data) => BTable(headers, data);
 
   /// Full set following the structure of a Tanzanian IFRS-for-SMEs audited pack:
   /// company information, directors' report, responsibilities, head-of-finance declaration, auditor's report (placeholder),
   /// statements of financial position, profit or loss, changes in equity, cash flows (indirect) and notes 1-16.
-  Future<File> financialStatementsPdf(DateTime from, DateTime to, Map<String, String> c, double taxRate) async {
+  Future<FsDoc> buildFinancialStatements(DateTime from, DateTime to, Map<String, String> c, double taxRate) async {
     final per = await repo.period(from, to, taxRate);
     final st = per.st, o = per.open, k = per.close;
     final products = await repo.products();
@@ -170,44 +163,28 @@ class ReportService {
     final finCash = (k.capital - o.capital) + (k.loanIn - o.loanIn) - (k.loanOut - o.loanOut) - drawYear;
     final netCash = opCash - capex + finCash;
 
-    final doc = pw.Document();
-    const margin = pw.EdgeInsets.fromLTRB(44, 40, 44, 40);
+    final cover = <String>[
+      company.toUpperCase(),
+      'FINANCIAL STATEMENTS',
+      periodTitle,
+      '',
+      'Prepared by management - not yet audited',
+      'TIN: ${c['tin'] ?? '-'}',
+      if ((c['auditor_name'] ?? '').isNotEmpty) ...['', c['auditor_name']!, c['auditor_address'] ?? ''],
+    ];
 
-    // ---- cover
-    doc.addPage(pw.Page(
-      pageFormat: PdfPageFormat.a4,
-      margin: const pw.EdgeInsets.all(50),
-      build: (_) => pw.Center(
-        child: pw.Column(mainAxisAlignment: pw.MainAxisAlignment.center, children: [
-          pw.Text(company.toUpperCase(), textAlign: pw.TextAlign.center, style: pw.TextStyle(fontSize: 22, fontWeight: pw.FontWeight.bold)),
-          pw.SizedBox(height: 22),
-          pw.Text('FINANCIAL STATEMENTS', style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold)),
-          pw.SizedBox(height: 6),
-          pw.Text(periodTitle, style: const pw.TextStyle(fontSize: 12)),
-          pw.SizedBox(height: 40),
-          pw.Text('Prepared by management - not yet audited', style: const pw.TextStyle(fontSize: 10)),
-          pw.SizedBox(height: 4),
-          pw.Text('TIN: ${c['tin'] ?? '-'}', style: const pw.TextStyle(fontSize: 10)),
-          if ((c['auditor_name'] ?? '').isNotEmpty) ...[pw.SizedBox(height: 60), pw.Text(c['auditor_name']!, style: pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold)), pw.Text(c['auditor_address'] ?? '', style: const pw.TextStyle(fontSize: 9))],
-        ]),
-      ),
-    ));
-
-    final w = <pw.Widget>[];
-    void section(List<pw.Widget> children) {
-      if (w.isNotEmpty) w.add(pw.NewPage());
-      w.addAll(children);
-    }
+    final sections = <Section>[];
+    void section(String name, List<Block> blocks) => sections.add(Section(name, blocks));
 
     // ---- contents
-    section([
+    section('Contents', [
       _title('TABLE OF CONTENTS'),
       for (final t in ['Company information', isCo ? "Directors' report" : "Proprietor's report", isCo ? "Statement of directors' responsibilities" : "Statement of proprietor's responsibilities", 'Declaration of the head of finance', "Independent auditor's report", 'Statement of financial position', 'Statement of profit or loss', 'Statement of changes in equity', 'Statement of cash flows', 'Notes to the financial statements', 'Schedule of inventory on hand'])
-        pw.Padding(padding: const pw.EdgeInsets.symmetric(vertical: 4), child: pw.Text(t, style: const pw.TextStyle(fontSize: 11))),
+        BPara(t, size: 11),
     ]);
 
     // ---- company information
-    section([
+    section('Company info', [
       _title('COMPANY INFORMATION'),
       _h('REGISTRATION'),
       _para(isCo
@@ -223,13 +200,13 @@ class ReportService {
     final dirTable = dirLines.isEmpty
         ? _para('Not recorded - add the names in Settings > Company profile.')
         : _table(['S/N', 'NAME', 'NATIONALITY'], [for (var i = 0; i < dirLines.length; i++) ['${i + 1}', dirLines[i].split(',').first.trim(), dirLines[i].contains(',') ? dirLines[i].split(',').sublist(1).join(',').trim() : '']]);
-    section([
+    section('Directors report', [
       _title(isCo ? "DIRECTORS' REPORT FOR THE ${unit.toUpperCase()} ${periodTitle.replaceFirst('FOR THE ${unit.toUpperCase()} ', '')}" : "PROPRIETOR'S REPORT $periodTitle"),
       _para('1. INTRODUCTION', bold: true),
       _para('The $owners present their report and the financial statements for the $unit ended ${DateFormat('d MMMM yyyy').format(to)}.'),
       _para('2. PRINCIPAL ACTIVITY', bold: true),
       _para((c['principal_activity'] ?? '').isNotEmpty ? c['principal_activity']! : 'Trading in goods.'),
-      if (isCo) ...[_para('3. DIRECTORS', bold: true), dirTable, pw.SizedBox(height: 6)],
+      if (isCo) ...[_para('3. DIRECTORS', bold: true), dirTable, const BGap()],
       _para('4. RESULTS', bold: true),
       _para('The results for the $unit are set out in the statement of profit or loss. The ${pat >= 0 ? 'profit' : 'loss'} after tax was TZS ${_p(pat.abs())}.'),
       _para('5. SOLVENCY', bold: true),
@@ -248,81 +225,80 @@ class ReportService {
       _para('The ${isCo ? 'company' : 'business'} values responsible corporate citizenship and takes part in community activities.'),
       _para('12. AUDITORS', bold: true),
       _para((c['auditor_name'] ?? '').isNotEmpty ? '${c['auditor_name']} are eligible for appointment as auditors for the $unit ended ${DateFormat('d MMMM yyyy').format(to)}.' : 'Auditors will be appointed in accordance with the applicable law.'),
-      pw.SizedBox(height: 18),
+      const BGap(),
       _para('BY ORDER OF THE ${isCo ? 'BOARD' : 'PROPRIETOR'}', bold: true),
-      pw.SizedBox(height: 16),
+      const BGap(),
       _para('............................................\n$firstDir\n${isCo ? 'DIRECTOR' : 'PROPRIETOR'}\n\nDATE: ......................'),
     ]);
 
     // ---- responsibilities
-    section([
+    section('Responsibilities', [
       _title(isCo ? "STATEMENT OF DIRECTORS' RESPONSIBILITIES" : "STATEMENT OF PROPRIETOR'S RESPONSIBILITIES"),
       _para(isCo
           ? "The directors are required under the Companies Act, 2002 to prepare financial statements for each financial year that give a true and fair view of the state of affairs of the company at the end of the year, its operating results, cash flows and changes in equity."
           : "The proprietor is responsible for preparing financial statements that give a true and fair view of the state of affairs of the business at the end of the year, its operating results and cash flows."),
       _para('Suitable accounting policies have been used and applied consistently, and reasonable and prudent judgment has been exercised where estimates were used. The International Financial Reporting Standard for SMEs has been followed and the financial statements have been prepared on the going concern basis.'),
       _para('The $owners are responsible for keeping proper accounting records that disclose with reasonable accuracy, at any time, the financial position of the ${isCo ? 'company' : 'business'}, for safeguarding its assets, and for taking reasonable steps to prevent and detect fraud, error and other irregularities.'),
-      pw.SizedBox(height: 24),
+      const BGap(),
       _para('............................................\n$firstDir\n${isCo ? 'DIRECTOR' : 'PROPRIETOR'}\n\nDATE: ......................'),
     ]);
 
     // ---- head of finance declaration
-    section([
+    section('Head of finance', [
       _title('DECLARATION OF THE HEAD OF FINANCE / ACCOUNTING'),
       _para('The National Board of Accountants and Auditors (NBAA), under the Auditors and Accountants (Registration) Act, requires financial statements to be accompanied by a declaration from the person responsible for the preparation of the financial statements of the entity.'),
       _para('I, ${(c['finance_head'] ?? '').isNotEmpty ? c['finance_head'] : '................................................'}, being the Head of Finance / Accounting of $company, acknowledge my responsibility for ensuring that the financial statements for the $unit ended ${DateFormat('d MMMM yyyy').format(to)} have been prepared in compliance with applicable accounting standards and statutory requirements.'),
       _para('I confirm that the financial statements comply with applicable accounting standards and statutory requirements as at that date and that they have been prepared from properly maintained financial records.'),
-      pw.SizedBox(height: 18),
+      const BGap(),
       _para('Signed by: ....................................\nPosition: ....................................\nNBAA Membership No.: ....................................\nDate: ....................................'),
     ]);
 
     // ---- auditor's report placeholder (never fabricate an opinion)
-    section([
+    section('Auditor report', [
       _title("INDEPENDENT AUDITOR'S REPORT"),
-      pw.SizedBox(height: 40),
-      pw.Center(child: pw.Text("[ To be issued and signed by the company's registered auditor (CPA). ]\n\nThese financial statements have been prepared by management and have not been audited.\nInsert the signed auditor's report here before filing.", textAlign: pw.TextAlign.center, style: const pw.TextStyle(fontSize: 11, lineSpacing: 4))),
+      const BGap(),
+      BPara("[ To be issued and signed by the company's registered auditor (CPA). ]\n\nThese financial statements have been prepared by management and have not been audited.\nInsert the signed auditor's report here before filing.", size: 11, center: true),
     ]);
 
     // ---- statement of financial position
-    section([
+    section('Financial position', [
       _title('STATEMENT OF FINANCIAL POSITION AS AT ${endTxt.replaceAll(',', '')}'),
-      pw.Align(alignment: pw.Alignment.centerRight, child: pw.Text('NOTE        TZS', style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold))),
       _h('ASSETS'),
-      pw.Text('Non-current assets', style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold)),
+      BSub('Non-current assets'),
       _row('Property, plant and equipment (Note 3)', _p(k.fixedAssets), indent: 1),
-      pw.SizedBox(height: 6),
-      pw.Text('Current assets', style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold)),
+      const BGap(),
+      BSub('Current assets'),
       _row('Inventories (Note 5)', _p(k.inventory), indent: 1),
       _row('Receivables and prepayments (Note 6)', _p(recvTotal), indent: 1),
       _row('Provisional tax paid (Note 11)', _p(prepaidTax), indent: 1),
       _row('Cash balances (Note 7)', _p(k.cash), indent: 1),
       _row('Total current assets', _p(currentAssets), bold: true, topLine: true),
-      pw.SizedBox(height: 4),
+      const BGap(),
       _row('TOTAL ASSETS', _p(totalAssets), bold: true, topLine: true),
       _h('EQUITY AND LIABILITIES'),
-      pw.Text('Equity', style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold)),
+      BSub('Equity'),
       _row(isCo ? 'Share capital' : "Owner's capital", _p(capClose), indent: 1),
       _row('Retained earnings brought forward', _p(reOpen), indent: 1),
       _row('Profit / (loss) for the $unit', _p(pat), indent: 1),
       if (drawYear.abs() > 0.5) _row(isCo ? 'Dividends paid' : 'Drawings', _p(-drawYear), indent: 1),
       _row('Total equity', _p(totalEquity), bold: true, topLine: true),
-      pw.SizedBox(height: 6),
-      pw.Text('Current liabilities', style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold)),
+      const BGap(),
+      BSub('Current liabilities'),
       if (k.loans.abs() > 0.5) _row('Loans', _p(k.loans), indent: 1),
       _row('Trade and other payables (Note 8)', _p(payTotal), indent: 1),
       _row('Income tax payable (Note 11)', _p(taxPayable), indent: 1),
       _row('Total current liabilities', _p(currentLiab), bold: true, topLine: true),
-      pw.SizedBox(height: 4),
+      const BGap(),
       _row('TOTAL EQUITY AND LIABILITIES', _p(totalEquity + currentLiab), bold: true, topLine: true),
-      if (k.imbalance.abs() > 0.5) ...[pw.SizedBox(height: 6), _row('Unreconciled difference - check ledger entries', _p(k.imbalance))],
-      pw.SizedBox(height: 16),
+      if (k.imbalance.abs() > 0.5) ...[const BGap(), _row('Unreconciled difference - check ledger entries', _p(k.imbalance))],
+      const BGap(),
       _para("We, the undersigned, declare that the above statement of financial position and accompanying financial statements are correct and that the accounting records, information and explanations given for the purpose of the audit are true and correct to the best of our knowledge.", size: 8.5),
       _para('Name: $firstDir          Signature: ......................          Date: ......................', size: 8.5),
     ]);
 
     // ---- statement of profit or loss
     final adminCats = st.expensesByCat.keys.where((e) => e != _financeCat).toList();
-    section([
+    section('Profit or loss', [
       _title('STATEMENT OF PROFIT OR LOSS $periodTitle'),
       _row('Income (Note 4)', _p(revenue), bold: true),
       _row('Direct costs', _p(-cogs)),
@@ -333,15 +309,14 @@ class ReportService {
       _row('Depreciation (Note 3)', _p(-dep), indent: 1),
       _row('Finance costs (Note 9)', _p(-finance), indent: 1),
       _row('Total operating costs', _p(-(admin + dep + finance)), bold: true, topLine: true),
-      pw.SizedBox(height: 4),
+      const BGap(),
       _row('PROFIT / (LOSS) BEFORE TAX', _p(pbt), bold: true, topLine: true),
       _row('Tax expense (Note 11)', _p(-tax)),
       _row('NET PROFIT / (LOSS) FOR THE ${unit.toUpperCase()}', _p(pat), bold: true, topLine: true),
-      if (adminCats.isEmpty && finance == 0) pw.SizedBox(height: 1),
     ]);
 
     // ---- statement of changes in equity
-    section([
+    section('Changes in equity', [
       _title('STATEMENT OF CHANGES IN EQUITY $periodTitle'),
       _table(['', isCo ? 'Share capital TZS' : "Owner's capital TZS", 'Retained earnings TZS', 'Total equity TZS'], [
         ['Balance at ${DateFormat('dd-MM-yyyy').format(from)}', _p(capOpen), _p(reOpen), _p(capOpen + reOpen)],
@@ -353,7 +328,7 @@ class ReportService {
     ]);
 
     // ---- statement of cash flows (indirect)
-    section([
+    section('Cash flows', [
       _title('STATEMENT OF CASH FLOWS $periodTitle'),
       _h('Cash flows from operating activities'),
       _row('Profit / (loss) before tax', _p(pbt), indent: 1),
@@ -376,11 +351,11 @@ class ReportService {
       _row('Loans repaid', _p(-(k.loanOut - o.loanOut)), indent: 1),
       _row(isCo ? 'Dividends paid' : 'Drawings', _p(-drawYear), indent: 1),
       _row('Net cash flows from / (used in) financing activities (C)', _p(finCash), bold: true, topLine: true),
-      pw.SizedBox(height: 6),
+      const BGap(),
       _row('NET INCREASE / (DECREASE) IN CASH AND CASH EQUIVALENTS (A+B+C)', _p(netCash), bold: true, topLine: true),
       _row('Cash at the beginning of the $unit', _p(o.cash), indent: 1),
       _row('CASH AND CASH EQUIVALENTS AT THE END OF THE ${unit.toUpperCase()}', _p(k.cash), bold: true, topLine: true),
-      if ((k.openingStock - o.openingStock).abs() > 0.5) ...[pw.SizedBox(height: 8), pw.Text('Non-cash: opening stock of TZS ${_p(k.openingStock - o.openingStock)} was introduced as capital in kind and is excluded above.', style: const pw.TextStyle(fontSize: 8))],
+      if ((k.openingStock - o.openingStock).abs() > 0.5) ...[const BGap(), BPara('Non-cash: opening stock of TZS ${_p(k.openingStock - o.openingStock)} was introduced as capital in kind and is excluded above.', size: 8)],
     ]);
 
     // ---- notes
@@ -388,7 +363,7 @@ class ReportService {
     final classes = assetClasses.keys.toList();
     String cell(Map<String, double> m, String key) => _p(m[key] ?? 0);
     final adminSorted = [..._adminOrder.where(adminCats.contains), ...adminCats.where((e) => !_adminOrder.contains(e))];
-    section([
+    section('Notes', [
       _title('NOTES TO THE FINANCIAL STATEMENTS'),
       _para('1. BASIS OF PREPARATION', bold: true),
       _para('The financial statements have been prepared on a historical cost basis and are presented in Tanzanian Shillings (TZS). Statement of compliance: they have been prepared in accordance with the International Financial Reporting Standard for Small and Medium-sized Entities (IFRS for SMEs). They were prepared from the records kept in Kibo Trade (fiscal sales receipts, purchases, expenses, fixed-asset register and capital/tax ledger).'),
@@ -413,7 +388,7 @@ class ReportService {
         ['DEPRECIATION at end', ...classes.map((e) => cell(k.depByClass, e)), _p(k.depreciation)],
         ['CARRYING AMOUNT at end', ...classes.map((e) => _p((k.costByClass[e] ?? 0) - (k.depByClass[e] ?? 0))), _p(k.fixedAssets)],
       ]),
-      pw.SizedBox(height: 8),
+      const BGap(),
       _h('4. REVENUE'),
       for (final code in taxLetters)
         if (st.salesByClass[code] != null) _row(taxNames[code]!, _p(st.salesByClass[code]!.net), indent: 1),
@@ -462,30 +437,29 @@ class ReportService {
     ]);
 
     // ---- inventory schedule
-    section([
+    section('Inventory', [
       _title('SCHEDULE OF INVENTORY ON HAND (CURRENT RECORDS)'),
       _table(['SKU', 'Product', 'Qty', 'Unit cost', 'Value'], [for (final p in products) [p.sku, p.name, fmtQty(p.stock), _pd(p.cost), _pd(p.stock * p.cost)]]),
-      pw.SizedBox(height: 6),
+      const BGap(),
       _row('Total stock valuation (qty x cost)', _p(st.stockValue), bold: true),
     ]);
 
-    doc.addPage(pw.MultiPage(
-      pageFormat: PdfPageFormat.a4,
-      margin: margin,
-      header: (ctx) => pw.Padding(
-        padding: const pw.EdgeInsets.only(bottom: 10),
-        child: pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
-          pw.Text(company.toUpperCase(), style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold)),
-          pw.Text('FINANCIAL STATEMENTS $periodTitle', style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold)),
-          pw.Divider(thickness: 0.5),
-        ]),
-      ),
-      footer: (ctx) => pw.Align(alignment: pw.Alignment.centerRight, child: pw.Text('${ctx.pageNumber}', style: const pw.TextStyle(fontSize: 9))),
-      build: (_) => w,
-    ));
+    return FsDoc(company: company, periodTitle: periodTitle, tag: _tag(from, to), cover: cover, sections: sections);
+  }
 
-    final file = File('${(await exportsDir()).path}/financial_statements_${_tag(from, to)}.pdf');
-    return file.writeAsBytes(await doc.save());
+  Future<File> financialStatementsPdf(DateTime from, DateTime to, Map<String, String> c, double taxRate) async {
+    final d = await buildFinancialStatements(from, to, c, taxRate);
+    return File('${(await exportsDir()).path}/financial_statements_${d.tag}.pdf').writeAsBytes(await fsToPdf(d));
+  }
+
+  Future<File> financialStatementsDocx(DateTime from, DateTime to, Map<String, String> c, double taxRate) async {
+    final d = await buildFinancialStatements(from, to, c, taxRate);
+    return File('${(await exportsDir()).path}/financial_statements_${d.tag}.docx').writeAsBytes(fsToDocx(d));
+  }
+
+  Future<File> financialStatementsXlsx(DateTime from, DateTime to, Map<String, String> c, double taxRate) async {
+    final d = await buildFinancialStatements(from, to, c, taxRate);
+    return File('${(await exportsDir()).path}/financial_statements_${d.tag}.xlsx').writeAsBytes(fsToXlsx(d));
   }
 
   // ------------------------------------------------------------ VAT working paper
@@ -497,21 +471,21 @@ class ReportService {
       margin: const pw.EdgeInsets.all(40),
       build: (_) => [
         _head(c, 'VAT RETURN - WORKING PAPER', 'For the period ${DateFormat('d MMM yyyy').format(from)} to ${DateFormat('d MMM yyyy').format(to)}'),
-        _h('Output VAT (sales)'),
+        _pwH('Output VAT (sales)'),
         for (final code in taxLetters)
           if (st.salesByClass[code] != null) ...[
-            _row('${taxNames[code]} - net', _pd(st.salesByClass[code]!.net), indent: 1),
-            _row('${taxNames[code]} - VAT', _pd(st.salesByClass[code]!.vat), indent: 1),
+            _pwRow('${taxNames[code]} - net', _pd(st.salesByClass[code]!.net), indent: 1),
+            _pwRow('${taxNames[code]} - VAT', _pd(st.salesByClass[code]!.vat), indent: 1),
           ],
-        _row('Total output VAT', _pd(st.outputVat), bold: true, topLine: true),
-        _h('Input VAT (purchases and expenses)'),
-        _row('Stock purchases - net', _pd(st.purchasesNet), indent: 1),
-        _row('Stock purchases - VAT', _pd(st.purchasesVat), indent: 1),
-        _row('Expenses - net', _pd(st.expensesNet), indent: 1),
-        _row('Expenses - VAT', _pd(st.expensesVat), indent: 1),
-        _row('Total input VAT', _pd(st.inputVat), bold: true, topLine: true),
+        _pwRow('Total output VAT', _pd(st.outputVat), bold: true, topLine: true),
+        _pwH('Input VAT (purchases and expenses)'),
+        _pwRow('Stock purchases - net', _pd(st.purchasesNet), indent: 1),
+        _pwRow('Stock purchases - VAT', _pd(st.purchasesVat), indent: 1),
+        _pwRow('Expenses - net', _pd(st.expensesNet), indent: 1),
+        _pwRow('Expenses - VAT', _pd(st.expensesVat), indent: 1),
+        _pwRow('Total input VAT', _pd(st.inputVat), bold: true, topLine: true),
         pw.SizedBox(height: 6),
-        _row(st.vatPayable >= 0 ? 'NET VAT PAYABLE' : 'NET VAT REFUNDABLE / CARRY FORWARD', _pd(st.vatPayable.abs()), bold: true, topLine: true),
+        _pwRow(st.vatPayable >= 0 ? 'NET VAT PAYABLE' : 'NET VAT REFUNDABLE / CARRY FORWARD', _pd(st.vatPayable.abs()), bold: true, topLine: true),
         pw.SizedBox(height: 14),
         pw.Text('Input VAT is claimable only with valid supplier tax invoices / EFD receipts. Transcribe into the TRA Tax Online Services VAT return and attach the sales and purchases schedules (CSV).', style: const pw.TextStyle(fontSize: 8)),
       ],

@@ -136,7 +136,7 @@ class Repo {
 
   /// Atomically: validates stock, assigns fiscal counters (GC/DC), writes sale + items + VAT lines,
   /// decrements stock and queues the receipt for TRA upload. Returns the new sale id.
-  Future<int> createSale({required List<CartLine> lines, required String payment, required bool fiscal, String custName = '', String custId = '', String mobile = ''}) async {
+  Future<int> createSale({required List<CartLine> lines, required String payment, required bool fiscal, bool supplierMode = false, String custName = '', String custId = '', String mobile = ''}) async {
     final d = await _d;
     return d.transaction<int>((t) async {
       final now = DateTime.now();
@@ -172,7 +172,7 @@ class Repo {
         gc = await _next(t, 'gc');
         dc = await _next(t, 'dc_$day');
         final code = (await t.query('settings', where: 'key=?', whereArgs: ['receiptcode'])).firstOrNull?['value'] as String? ?? '';
-        rctvnum = '$code$gc';
+        rctvnum = supplierMode ? '' : '$code$gc'; // supplier API returns the verification code
       }
 
       final saleId = await t.insert('sales', {
@@ -246,6 +246,24 @@ class Repo {
 
   Future<void> markUploaded(int id, String code, String msg) async {
     await (await _d).update('sales', {'upload_status': 'uploaded', 'ack_code': code, 'ack_msg': msg, 'last_error': null, 'uploaded_at': DateTime.now().toIso8601String()}, where: 'id=?', whereArgs: [id]);
+  }
+
+  Future<void> markFiscalised(int id, {String fiscalNo = '', String verifyCode = '', String verifyUrl = '', String ackCode = '', String ackMsg = ''}) async {
+    await (await _d).update(
+      'sales',
+      {
+        'upload_status': 'uploaded',
+        'fiscal_no': fiscalNo,
+        'verify_url': verifyUrl,
+        if (verifyCode.isNotEmpty) 'rctvnum': verifyCode,
+        'ack_code': ackCode,
+        'ack_msg': ackMsg,
+        'last_error': null,
+        'uploaded_at': DateTime.now().toIso8601String(),
+      },
+      where: 'id=?',
+      whereArgs: [id],
+    );
   }
 
   Future<void> markFailed(int id, String err) async {

@@ -26,6 +26,7 @@ dependencies:
   printing: ^5.12.0
   share_plus: ^9.0.0
   excel: ^4.0.6
+  archive: any   # zip for .docx; version chosen by pub together with excel/pdf
   file_picker: ^8.0.5
   qr_flutter: ^4.1.0
   connectivity_plus: ^6.0.3

@@ -11,7 +11,7 @@ class Db {
   static Future<Database> _open() async {
     return openDatabase(
       await path,
-      version: 3,
+      version: 4,
       onUpgrade: (d, oldV, newV) async {
         if (oldV < 2) {
           await d.execute("ALTER TABLE stock_movements ADD COLUMN kind TEXT DEFAULT ''");
@@ -25,6 +25,10 @@ class Db {
           await d.execute('ALTER TABLE expenses ADD COLUMN paid INTEGER DEFAULT 1');
           await d.execute("DELETE FROM equity_ledger WHERE type='asset_purchase'");
           await _v3(d);
+        }
+        if (oldV < 4) {
+          await d.execute("ALTER TABLE sales ADD COLUMN fiscal_no TEXT DEFAULT ''");
+          await d.execute("ALTER TABLE sales ADD COLUMN verify_url TEXT DEFAULT ''");
         }
       },
       onConfigure: (d) async => d.execute('PRAGMA foreign_keys = ON'),
@@ -42,7 +46,8 @@ class Db {
           customer_name TEXT DEFAULT '', customer_id_type INTEGER DEFAULT 6, customer_id TEXT DEFAULT '', mobile TEXT DEFAULT '',
           payment_type TEXT, total_excl REAL, total_vat REAL, total_incl REAL, cogs REAL DEFAULT 0,
           upload_status TEXT DEFAULT 'queued', attempts INTEGER DEFAULT 0, last_error TEXT,
-          ack_code TEXT, ack_msg TEXT, uploaded_at TEXT)''');
+          ack_code TEXT, ack_msg TEXT, uploaded_at TEXT,
+          fiscal_no TEXT DEFAULT '', verify_url TEXT DEFAULT '')''');
         await d.execute('CREATE INDEX idx_sales_day ON sales(day)');
         await d.execute('CREATE INDEX idx_sales_status ON sales(upload_status)');
         await d.execute('''CREATE TABLE sale_items(

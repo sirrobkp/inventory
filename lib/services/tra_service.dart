@@ -11,6 +11,10 @@ import 'package:path_provider/path_provider.dart';
 import '../data/models.dart';
 import '../data/repo.dart';
 import '../data/tax.dart';
+import 'fiscal_result.dart';
+import 'generic_vfd_service.dart';
+
+export 'fiscal_result.dart';
 
 /// ---------------------------------------------------------------------------
 /// TRA Virtual Fiscal Device (VFD) client for the EFDMS web API.
@@ -23,12 +27,6 @@ import '../data/tax.dart';
 /// TRA test environment BEFORE going live. See README "Before you go live".
 /// ---------------------------------------------------------------------------
 
-class TraResult {
-  TraResult({required this.ok, this.code = '', this.msg = '', this.retryLater = false});
-  final bool ok;
-  final String code, msg;
-  final bool retryLater; // auth/network: leave in queue, try again
-}
 
 String esc(String s) => s.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&apos;');
 String tag(String n, Object? v) => '<$n>${esc('${v ?? ''}')}</$n>';
@@ -36,8 +34,9 @@ String? pick(String xml, String name) => RegExp('<$name>(.*?)</$name>', dotAll: 
 String _f(double v) => v.toStringAsFixed(2);
 
 class TraService {
-  TraService(this.repo);
+  TraService(this.repo, this.vfd);
   final Repo repo;
+  final GenericVfdService vfd;
 
   static const _ch = MethodChannel('kibo/signer');
   static const _sec = FlutterSecureStorage();
@@ -193,7 +192,34 @@ class TraService {
 
   /// Uploads every queued fiscal receipt in GC order. Called right after each approved sale,
   /// on a timer, and when connectivity returns. Network failures leave receipts queued.
+  Future<String> get mode async => _cfg('fiscal_mode', 'direct');
+
+  /// Supplier mode: the supplier's API issues the receipt number / verification code and talks to TRA.
+  Future<int> _uploadViaSupplier() async {
+    if (_busy || await _cfg('supplier_ready') != '1') return 0;
+    _busy = true;
+    var sent = 0;
+    try {
+      for (final s in await repo.queuedSales()) {
+        final r = await vfd.submit(s);
+        if (r.ok) {
+          await repo.markFiscalised(s.id!, fiscalNo: r.receiptNo, verifyCode: r.verifyCode, verifyUrl: r.verifyUrl, ackCode: r.code, ackMsg: r.msg);
+          sent++;
+        } else if (r.retryLater) {
+          await repo.noteAttempt(s.id!, r.msg);
+          break;
+        } else {
+          await repo.markFailed(s.id!, '${r.code}: ${r.msg}');
+        }
+      }
+    } finally {
+      _busy = false;
+    }
+    return sent;
+  }
+
   Future<int> uploadPending() async {
+    if (await mode == 'supplier') return _uploadViaSupplier();
     if (_busy || !await isRegistered || !await hasCert) return 0;
     _busy = true;
     var sent = 0;
@@ -301,6 +327,7 @@ class TraService {
 
   /// Auto-submits Z-reports for every past trading day that has none yet.
   Future<void> submitDueZReports() async {
+    if (await mode == 'supplier') return; // supplier files Z-reports
     if (!await isRegistered || !await hasCert) return;
     for (final d in await repo.daysNeedingZ()) {
       final r = await submitZReport(d);

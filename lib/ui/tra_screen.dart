@@ -84,11 +84,13 @@ class _TraScreenState extends State<TraScreen> {
                 Container(
                   padding: const EdgeInsets.only(top: 14),
                   decoration: const BoxDecoration(border: Border(top: BorderSide(color: Color(0x1A000000)))),
-                  child: Row(children: [
-                    _Kv('TIN', s.cfg['tin'] ?? '-'),
-                    _Kv('VRN', s.cfg['vrn'] ?? '-'),
-                    _Kv('SERIAL', s.cfg['serial'] ?? '-'),
-                  ]),
+                  child: Row(children: s.fiscalMode == 'supplier'
+                      ? [_Kv('PROVIDER', s.cfg['vfd_profile_name'] ?? '-'), _Kv('TIN', s.cfg['tin'] ?? '-'), _Kv('MODE', 'Supplier API')]
+                      : [
+                          _Kv('TIN', s.cfg['tin'] ?? '-'),
+                          _Kv('VRN', s.cfg['vrn'] ?? '-'),
+                          _Kv('SERIAL', s.cfg['serial'] ?? '-'),
+                        ]),
                 ),
               ],
             ]),
@@ -238,7 +240,7 @@ class _ReceiptDetail extends StatelessWidget {
       Row(children: [
         Expanded(child: LimeButton('Reprint', icon: Ic.printer, onTap: () async => toast(context, await s.printReceipt(sale)))),
         const SizedBox(width: 10),
-        Expanded(child: LimeButton('PDF', icon: Ic.pdf, outline: true, onTap: () => s.printer.printPdf(sale, s.cfg))),
+        Expanded(child: LimeButton('PDF', icon: Ic.pdf, outline: true, onTap: () => s.printer.sharePdf(context, sale, s.cfg))),
       ]),
     ]);
   }

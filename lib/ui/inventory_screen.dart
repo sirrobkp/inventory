@@ -326,7 +326,7 @@ class _StockSheetState extends State<_StockSheet> {
         f(cost, 'Unit cost (excl. VAT)', n: true),
         f(supplier, 'Supplier'),
         Row(children: [Expanded(child: f(tin, 'Supplier TIN')), const SizedBox(width: 10), Expanded(child: f(invoice, 'Invoice no.'))]),
-        f(efd, 'Supplier EFD receipt no.', hint: 'needed to claim input VAT'),
+        f(efd, 'Supplier EFD verification code', hint: 'TRA only accepts input VAT with this'),
         SwitchListTile(contentPadding: EdgeInsets.zero, title: Text('Already paid to supplier', style: t(13)), subtitle: Text(paid ? 'Cash goes out now' : 'Recorded as trade payable until you add a payment entry', style: t(10, w: FontWeight.w500, c: K.muted)), value: paid, onChanged: (v) => setState(() => paid = v)),
         Text('Input VAT is computed from this product\'s VAT class and feeds the VAT return.', style: t(10, w: FontWeight.w500, c: K.dim)),
       ] else

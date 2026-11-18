@@ -114,12 +114,14 @@ class Sale {
     this.lastError,
     this.ackCode,
     this.ackMsg,
+    this.fiscalNo = '',
+    this.verifyLink = '',
     this.items = const [],
     this.vat = const [],
   });
   final int? id;
   final DateTime createdAt;
-  final String day, znum, rctvnum, customerName, customerId, mobile, paymentType, uploadStatus;
+  final String day, znum, rctvnum, customerName, customerId, mobile, paymentType, uploadStatus, fiscalNo, verifyLink;
   final int gc, dc, customerIdType, attempts;
   final bool fiscal;
   final double totalExcl, totalVat, totalIncl, cogs;
@@ -150,15 +152,35 @@ class Sale {
         lastError: m['last_error'] as String?,
         ackCode: m['ack_code'] as String?,
         ackMsg: m['ack_msg'] as String?,
+        fiscalNo: (m['fiscal_no'] as String?) ?? '',
+        verifyLink: (m['verify_url'] as String?) ?? '',
         items: items,
         vat: vat,
       );
 
   /// Receipt label shown to customer, e.g. "TZ-000123" (GC) - non-fiscal sales use "NF-<id>".
-  String get number => fiscal ? gc.toString().padLeft(6, '0') : 'NF-${id ?? 0}';
+  String get number => fiscal ? (fiscalNo.isNotEmpty ? fiscalNo : gc.toString().padLeft(6, '0')) : 'NF-${id ?? 0}';
 
   /// TRA receipt verification URL / QR payload.
-  String get verifyUrl => 'https://verify.tra.go.tz/${rctvnum}_${DateFormat('HHmmss').format(createdAt)}';
+  /// Supplier-issued link wins; supplier code without link -> the code itself; direct EFDMS -> TRA verify URL.
+  String get verifyUrl {
+    if (verifyLink.isNotEmpty) return verifyLink;
+    if (rctvnum.isEmpty) return '';
+    if (fiscalNo.isNotEmpty) return rctvnum;
+    return 'https://verify.tra.go.tz/${rctvnum}_${DateFormat('HHmmss').format(createdAt)}';
+  }
+
+  /// A sample receipt used to preview what will be sent to a supplier API.
+  factory Sale.sample() {
+    final now = DateTime.now();
+    return Sale(
+      id: 0, createdAt: now, day: DateFormat('yyyy-MM-dd').format(now), gc: 1, dc: 1, znum: DateFormat('yyyyMMdd').format(now), rctvnum: '',
+      fiscal: true, customerName: 'Sample Customer', customerIdType: 1, customerId: '123-456-789', mobile: '0712345678', paymentType: 'CASH',
+      totalExcl: 16949.15, totalVat: 3050.85, totalIncl: 20000, cogs: 12000, uploadStatus: 'queued', attempts: 0,
+      items: [SaleItem(productId: 1, name: 'Sample item', sku: 'SKU-1', qty: 2, unitPrice: 10000, amount: 20000, cost: 6000, taxCode: 'A')],
+      vat: [VatLine('A', 16949.15, 3050.85, 20000)],
+    );
+  }
 
   bool get uploaded => uploadStatus == 'uploaded';
 }

@@ -126,6 +126,13 @@ class _ReportsScreenState extends State<ReportsScreen> {
         const SizedBox(height: 10),
         LimeButton('Full financial statements pack (PDF)', icon: Ic.pdf, busy: _busy, onTap: () => _export(() => s.reports.financialStatementsPdf(from, to, s.cfg, s.taxRate))),
         const SizedBox(height: 10),
+        const SizedBox(height: 10),
+        Row(children: [
+          Expanded(child: LimeButton('Word (.docx)', icon: Ic.fileText, outline: true, onTap: _busy ? null : () => _export(() => s.reports.financialStatementsDocx(from, to, s.cfg, s.taxRate)))),
+          const SizedBox(width: 10),
+          Expanded(child: LimeButton('Excel (.xlsx)', icon: Ic.table, outline: true, onTap: _busy ? null : () => _export(() => s.reports.financialStatementsXlsx(from, to, s.cfg, s.taxRate)))),
+        ]),
+        const SizedBox(height: 10),
         LimeButton('VAT working paper (PDF)', icon: Ic.pdf, outline: true, onTap: _busy ? null : () => _export(() => s.reports.vatPdf(from, to, s.cfg))),
         const SizedBox(height: 10),
         LimeButton('Sales schedule - VAT output (CSV)', icon: Ic.table, outline: true, onTap: _busy ? null : () => _export(() => s.reports.salesCsv(from, to))),

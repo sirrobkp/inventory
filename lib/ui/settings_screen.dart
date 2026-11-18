@@ -12,6 +12,7 @@ import '../data/app_state.dart';
 import '../data/db.dart';
 import '../services/tra_service.dart';
 import 'icons.dart';
+import 'supplier_panel.dart';
 import 'theme.dart';
 import 'widgets.dart';
 
@@ -36,6 +37,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   late final financeHead = TextEditingController(text: s.cfg['finance_head'] ?? '');
   late final taxRate = TextEditingController(text: s.cfg['income_tax_rate'] ?? '30');
   late String entity = s.cfg['entity_type'] ?? 'company';
+  late String fiscalMode = s.cfg['fiscal_mode'] ?? 'direct';
   late final tin = TextEditingController(text: s.cfg['tin'] ?? '');
   late final certKey = TextEditingController(text: s.cfg['cert_key'] ?? '');
   late final base = TextEditingController(text: s.cfg['tra_base'] ?? TraService.defaultBase);
@@ -142,7 +144,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
         f(financeHead, 'Head of finance / accountant name'),
         f(taxRate, 'Income tax rate % (company 30)', k: const TextInputType.numberWithOptions(decimal: true)),
         LimeButton('Save business info', icon: Ic.check, outline: true, onTap: _saveBiz),
-        h('TRA VFD registration'),
+        h('Fiscal device (VFD)'),
+        Wrap(spacing: 8, runSpacing: 8, children: [
+          Chip2('Supplier API (any VFD supplier)', selected: fiscalMode == 'supplier', onTap: () { setState(() => fiscalMode = 'supplier'); s.saveCfg({'fiscal_mode': 'supplier'}); }),
+          Chip2('Direct TRA (own certificate)', selected: fiscalMode == 'direct', onTap: () { setState(() => fiscalMode = 'direct'); s.saveCfg({'fiscal_mode': 'direct'}); }),
+        ]),
+        const SizedBox(height: 14),
+        if (fiscalMode == 'supplier') const SupplierPanel() else ...[
         Glass(radius: 18, padding: const EdgeInsets.all(14), child: Text(
           'You need a TRA-issued VFD certificate (.pfx), its password and the certificate key, obtained through TRA VFD onboarding. '
           'Start with the TEST environment URL TRA gives you.',
@@ -156,6 +164,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         const SizedBox(height: 10),
         LimeButton(s.registered ? 'Re-register VFD' : 'Register VFD with TRA', icon: Ic.verified, busy: _busy, onTap: _register),
         if (s.registered) Padding(padding: const EdgeInsets.only(top: 10), child: Text('Registered: ${s.cfg['name'] ?? ''}  -  REGID ${s.cfg['regid']}  -  UIN ${s.cfg['uin']}', style: mono(10, c: K.muted))),
+        ],
         h('Printer'),
         Row(children: [
           Expanded(child: Chip2('58 mm', selected: (s.cfg['paper'] ?? '58') == '58', onTap: () => s.saveCfg({'paper': '58'}))),

@@ -306,19 +306,21 @@ class _SuccessSheetState extends State<_SuccessSheet> {
       Text('${sale.fiscal ? 'Fiscal receipt' : 'Receipt'} #${sale.number}  -  ${money(sale.totalIncl)}', style: t(12, w: FontWeight.w500, c: const Color(0xFF86958E))),
       const SizedBox(height: 10),
       Badge2(status.$1, color: status.$2),
-      if (sale.fiscal) ...[
+      if (sale.fiscal && sale.verifyUrl.isNotEmpty) ...[
         const SizedBox(height: 16),
         Container(padding: const EdgeInsets.all(8), decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12)), child: QrImageView(data: sale.verifyUrl, size: 112, padding: EdgeInsets.zero)),
         const SizedBox(height: 8),
-        Text('Verification code ${sale.rctvnum}', style: mono(11, c: K.muted)),
+        if (sale.rctvnum.isNotEmpty) Text('Verification code ${sale.rctvnum}', style: mono(11, c: K.muted)),
       ],
       const SizedBox(height: 18),
       Row(children: [
         Expanded(child: LimeButton('Print', icon: Ic.printer, onTap: () async => toast(context, await s.printReceipt(widget.sale)))),
         const SizedBox(width: 10),
-        Expanded(child: LimeButton('PDF / Share', icon: Ic.pdf, outline: true, onTap: () => s.printer.printPdf(widget.sale, s.cfg))),
+        Expanded(child: LimeButton('PDF / Share', icon: Ic.pdf, outline: true, onTap: () => s.printer.sharePdf(context, widget.sale, s.cfg))),
       ]),
-      const SizedBox(height: 10),
+      const SizedBox(height: 8),
+      GestureDetector(onTap: () => s.printer.printPdf(widget.sale, s.cfg), child: Padding(padding: const EdgeInsets.all(6), child: Text('Print via system / Wi-Fi printer', style: t(11, c: K.lime)))),
+      const SizedBox(height: 4),
       GestureDetector(
         onTap: () => Navigator.pop(context),
         child: Container(width: double.infinity, padding: const EdgeInsets.symmetric(vertical: 15), decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16)), child: Center(child: Text('Done', style: t(12, w: FontWeight.w800, c: Colors.black)))),
