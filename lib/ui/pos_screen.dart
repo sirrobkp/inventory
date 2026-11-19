@@ -7,6 +7,7 @@ import 'package:qr_flutter/qr_flutter.dart';
 import '../data/app_state.dart';
 import '../data/models.dart';
 import '../data/tax.dart';
+import '../data/platform_info.dart';
 import 'scanner_listener.dart';
 import 'scanner_screen.dart';
 import 'icons.dart';
@@ -17,6 +18,7 @@ class PosScreen extends StatelessWidget {
   const PosScreen({super.key});
 
   Future<void> _scan(BuildContext context) async {
+    if (!hasCamera) return toast(context, 'Just scan with your USB / Bluetooth barcode scanner on this screen, or use the search icon');
     final s = context.read<AppState>();
     await Navigator.push(
       context,
@@ -86,7 +88,7 @@ class PosScreen extends StatelessWidget {
               child: Row(children: [
                 Container(width: 36, height: 36, decoration: BoxDecoration(color: K.lime, borderRadius: BorderRadius.circular(12)), child: const Icon(Ic.scan, color: Colors.black, size: 20)),
                 const SizedBox(width: 12),
-                Expanded(child: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.start, children: [Text('Scan item barcode', style: t(12)), Text('or tap the magnifier to search catalogue', style: t(10, w: FontWeight.w500, c: const Color(0xFF71827A)))])),
+                Expanded(child: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.start, children: [Text(hasCamera ? 'Scan item barcode' : 'Scan with your barcode scanner', style: t(12)), Text(hasCamera ? 'or tap the magnifier to search catalogue' : 'or tap the magnifier to search the catalogue', style: t(10, w: FontWeight.w500, c: const Color(0xFF71827A)))])),
                 GestureDetector(onTap: () => _catalogue(context), child: const Padding(padding: EdgeInsets.all(8), child: Icon(Ic.search, size: 20, color: K.lime))),
               ]),
             ),

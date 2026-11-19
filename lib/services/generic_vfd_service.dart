@@ -2,11 +2,11 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
 
 import '../data/models.dart';
+import '../data/secret_store.dart';
 import '../data/repo.dart';
 import '../data/tax.dart';
 import 'fiscal_result.dart';
@@ -118,7 +118,6 @@ class Tpl {
 class GenericVfdService {
   GenericVfdService(this.repo);
   final Repo repo;
-  static const _sec = FlutterSecureStorage();
   String? _token;
   DateTime _exp = DateTime(2000);
 
@@ -140,11 +139,11 @@ class GenericVfdService {
     _token = null;
   }
 
-  Future<Map<String, String>> credentials(VfdProfile p) async => {for (final f in p.fields) f.key: await _sec.read(key: 'vfdc_${f.key}') ?? ''};
+  Future<Map<String, String>> credentials(VfdProfile p) async => {for (final f in p.fields) f.key: await SecretStore.read('vfdc_${f.key}') ?? ''};
 
   Future<void> saveCredentials(Map<String, String> v) async {
     for (final e in v.entries) {
-      await _sec.write(key: 'vfdc_${e.key}', value: e.value);
+      await SecretStore.write('vfdc_${e.key}', e.value);
     }
     _token = null;
   }

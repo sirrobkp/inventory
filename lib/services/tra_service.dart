@@ -3,12 +3,13 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/services.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../data/models.dart';
+import '../data/platform_info.dart';
+import '../data/secret_store.dart';
 import '../data/repo.dart';
 import '../data/tax.dart';
 import 'fiscal_result.dart';
@@ -39,7 +40,6 @@ class TraService {
   final GenericVfdService vfd;
 
   static const _ch = MethodChannel('kibo/signer');
-  static const _sec = FlutterSecureStorage();
   static const defaultBase = 'https://virtual.tra.go.tz/efdmsRctApi'; // TEST environment - replace per TRA onboarding docs
 
   String? _token;
@@ -56,7 +56,7 @@ class TraService {
   // ------------------------------------------------------------ signing (native)
   Future<Map<String, String>> _signArgs(String data) async => {
         'path': await pfxPath,
-        'password': await _sec.read(key: 'pfx_password') ?? '',
+        'password': await SecretStore.read('pfx_password') ?? '',
         'data': data,
       };
 
@@ -110,7 +110,7 @@ class TraService {
         if (e.value != null) await repo.setSetting(e.key, e.value!);
       }
       final pw = pick(x, 'PASSWORD');
-      if (pw != null) await _sec.write(key: 'vfd_password', value: pw);
+      if (pw != null) await SecretStore.write('vfd_password', pw);
       _token = null;
       return TraResult(ok: true, code: code, msg: msg);
     } on PlatformException catch (e) {
@@ -128,7 +128,7 @@ class TraService {
     if (!path.startsWith('/')) path = '/$path';
     final res = await http.post(Uri.parse('$origin$path'), body: {
       'username': await _cfg('username'),
-      'password': await _sec.read(key: 'vfd_password') ?? '',
+      'password': await SecretStore.read('vfd_password') ?? '',
       'grant_type': 'password',
     }).timeout(const Duration(seconds: 30));
     final j = jsonDecode(res.body) as Map<String, dynamic>;
@@ -192,7 +192,7 @@ class TraService {
 
   /// Uploads every queued fiscal receipt in GC order. Called right after each approved sale,
   /// on a timer, and when connectivity returns. Network failures leave receipts queued.
-  Future<String> get mode async => _cfg('fiscal_mode', 'direct');
+  Future<String> get mode async => isDesktop ? 'supplier' : _cfg('fiscal_mode', 'direct');
 
   /// Supplier mode: the supplier's API issues the receipt number / verification code and talks to TRA.
   Future<int> _uploadViaSupplier() async {

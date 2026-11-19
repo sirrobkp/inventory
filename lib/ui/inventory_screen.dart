@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../data/app_state.dart';
 import '../data/models.dart';
 import '../data/tax.dart';
+import '../data/platform_info.dart';
 import 'scanner_screen.dart';
 import 'icons.dart';
 import 'theme.dart';
@@ -28,6 +29,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
   }
 
   Future<void> _scan() async {
+    if (!hasCamera) return toast(context, 'Camera scanning is for phones. On this device, click the search box and scan with your USB scanner.');
     final s = context.read<AppState>();
     final code = await Navigator.push<String>(context, MaterialPageRoute(builder: (_) => ScannerScreen(title: 'Scan to find product', onCode: (c) async => null)));
     if (code == null || !mounted) return;
@@ -203,7 +205,7 @@ class _ProductFormState extends State<ProductForm> {
       Text(edit ? 'Edit product' : 'New product', style: t(18, w: FontWeight.w800)),
       const SizedBox(height: 16),
       f(name, 'Product name'),
-      Row(children: [Expanded(child: f(sku, 'SKU', hint: 'auto if empty')), const SizedBox(width: 10), Expanded(child: f(barcode, 'Barcode', suffix: IconButton(onPressed: _scan, icon: const Icon(Ic.scan, size: 18, color: K.lime))))]),
+      Row(children: [Expanded(child: f(sku, 'SKU', hint: 'auto if empty')), const SizedBox(width: 10), Expanded(child: f(barcode, 'Barcode', suffix: hasCamera ? IconButton(onPressed: _scan, icon: const Icon(Ic.scan, size: 18, color: K.lime)) : null))]),
       Row(children: [Expanded(child: f(category, 'Category')), const SizedBox(width: 10), Expanded(child: f(unit, 'Unit'))]),
       Row(children: [Expanded(child: f(price, 'Selling price (incl. VAT)', k: numKb)), const SizedBox(width: 10), Expanded(child: f(cost, 'Cost (excl. VAT)', k: numKb))]),
       Row(children: [if (!edit) ...[Expanded(child: f(stock, 'Opening stock', k: numKb)), const SizedBox(width: 10)], Expanded(child: f(reorder, 'Reorder level', k: numKb))]),

@@ -12,6 +12,7 @@ import 'package:print_bluetooth_thermal/print_bluetooth_thermal.dart';
 import 'package:printing/printing.dart';
 
 import '../data/models.dart';
+import '../data/platform_info.dart';
 import '../data/tax.dart';
 import 'share_helper.dart';
 
@@ -156,6 +157,7 @@ class PrinterService {
   }
 
   Future<List<BluetoothInfo>> paired() async {
+    if (isDesktop) return [];
     if (!await _perms()) return [];
     return PrintBluetoothThermal.pairedBluetooths;
   }
@@ -171,6 +173,10 @@ class PrinterService {
   // ------------------------------------------------------------ thermal (ESC/POS)
   /// Prints on a Bluetooth ESC/POS thermal printer: 58 mm = 32 columns, 80 mm = 48 columns, monospace Font A.
   Future<String> printSale(Sale s, Map<String, String> c) async {
+    if (isDesktop) {
+      await printPdf(s, c); // desktop: system print dialog (choose the thermal/receipt printer and paper there)
+      return 'Print dialog opened';
+    }
     final mac = c['printer_mac'] ?? '';
     if (mac.isEmpty) return 'No printer selected - choose one in Settings, or use PDF/Share.';
     if (!await _ensure(mac)) return 'Could not connect to printer. Is it on and paired?';

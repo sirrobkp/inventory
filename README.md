@@ -26,3 +26,14 @@ Local: `bash tool/prepare.sh && flutter pub get && flutter run` (the pubspec pat
 4. **VAT return**: TRA's VAT return is filed on the TRA Tax Online Services portal. The app produces supporting schedules and a working paper; compare columns with TRA's current templates before uploading.
 5. **PKCS#12**: some old .pfx files use legacy algorithms (RC2) that new Android versions reject - if import fails with a correct password, re-export the PFX with AES/3DES.
 6. This code has not been compiled or run (no Flutter SDK in the build environment). Expect to fix small API drifts after `flutter pub get` / `flutter analyze` (package versions move).
+
+## Desktop (macOS / Windows)
+Codemagic workflows `macos-app` and `windows-app` (see codemagic.yaml). Phone builds are untouched: desktop-only
+setup lives in `tool/prepare_macos.sh`, `tool/patch_macos_pods.sh` and `tool/prepare_windows.ps1`.
+- Database: macOS uses native sqflite; Windows adds `sqflite_common_ffi` at build time (bundles SQLite).
+- Fiscal: desktop uses the Supplier API mode only (certificate signing plugin is Android/iOS).
+- Scanning: USB/Bluetooth "keyboard" scanners work on the Sell screen; camera scanning is phone-only.
+- Printing: tapping Print opens the system print dialog (pick the receipt printer + paper there).
+- Sharing/exports: desktop shows a Save-As dialog instead of a share sheet.
+- Secrets on macOS are stored in the local database (base64, not encrypted) because Keychain needs a signing entitlement.
+- macOS app is ad-hoc signed: after downloading, right-click > Open (or `xattr -cr KiboTrade.app`).

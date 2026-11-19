@@ -2,16 +2,17 @@ import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:print_bluetooth_thermal/print_bluetooth_thermal.dart';
 import 'package:provider/provider.dart';
 import '../services/share_helper.dart';
 
 import '../data/app_state.dart';
+import '../data/secret_store.dart';
 import '../data/db.dart';
 import '../services/tra_service.dart';
 import 'icons.dart';
+import '../data/platform_info.dart';
 import 'supplier_panel.dart';
 import 'theme.dart';
 import 'widgets.dart';
@@ -42,7 +43,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
   late final certKey = TextEditingController(text: s.cfg['cert_key'] ?? '');
   late final base = TextEditingController(text: s.cfg['tra_base'] ?? TraService.defaultBase);
   final pfxPass = TextEditingController();
-  static const _sec = FlutterSecureStorage();
   bool _busy = false;
   String? _certInfo;
   List<BluetoothInfo> _printers = [];
@@ -80,7 +80,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     setState(() => _busy = true);
     try {
       await File(path).copy(await s.tra.pfxPath);
-      await _sec.write(key: 'pfx_password', value: pfxPass.text);
+      await SecretStore.write('pfx_password', pfxPass.text);
       final serial = await s.tra.certSerialHex();
       setState(() => _certInfo = 'Certificate OK - serial $serial');
     } catch (e) {
@@ -145,12 +145,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
         f(taxRate, 'Income tax rate % (company 30)', k: const TextInputType.numberWithOptions(decimal: true)),
         LimeButton('Save business info', icon: Ic.check, outline: true, onTap: _saveBiz),
         h('Fiscal device (VFD)'),
+        if (!isDesktop) ...[
         Wrap(spacing: 8, runSpacing: 8, children: [
           Chip2('Supplier API (any VFD supplier)', selected: fiscalMode == 'supplier', onTap: () { setState(() => fiscalMode = 'supplier'); s.saveCfg({'fiscal_mode': 'supplier'}); }),
           Chip2('Direct TRA (own certificate)', selected: fiscalMode == 'direct', onTap: () { setState(() => fiscalMode = 'direct'); s.saveCfg({'fiscal_mode': 'direct'}); }),
         ]),
         const SizedBox(height: 14),
-        if (fiscalMode == 'supplier') const SupplierPanel() else ...[
+        ],
+        if (isDesktop) Padding(padding: const EdgeInsets.only(bottom: 12), child: Text('On desktop, connect through your VFD supplier\'s API (direct certificate signing is available on Android/iOS only).', style: t(11, w: FontWeight.w500, c: K.muted, h: 1.5))),
+        if (fiscalMode == 'supplier' || isDesktop) const SupplierPanel() else ...[
         Glass(radius: 18, padding: const EdgeInsets.all(14), child: Text(
           'You need a TRA-issued VFD certificate (.pfx), its password and the certificate key, obtained through TRA VFD onboarding. '
           'Start with the TEST environment URL TRA gives you.',
@@ -178,6 +181,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           value: s.cfg['auto_print'] == '1',
           onChanged: (v) => s.saveCfg({'auto_print': v ? '1' : '0'}),
         ),
+        if (isDesktop) Text('Printing uses your computer\'s printers: when you tap Print, pick the receipt/thermal printer and its paper size in the print dialog. 58/80 mm above sets the Bluetooth layout on phones.', style: t(11, w: FontWeight.w500, c: K.muted, h: 1.5)) else ...[
         Text(s.cfg['printer_mac'] == null || s.cfg['printer_mac']!.isEmpty ? 'No printer selected' : 'Selected: ${s.cfg['printer_name'] ?? ''} (${s.cfg['printer_mac']})', style: t(11, w: FontWeight.w500, c: K.muted)),
         const SizedBox(height: 10),
         LimeButton('Find paired Bluetooth printers', icon: Ic.bluetooth, outline: true, onTap: _findPrinters),
@@ -189,6 +193,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               if (mounted) toast(context, 'Printer set: ${p.name}');
             }, child: Row(children: [const Icon(Ic.printer, size: 18, color: K.lime), const SizedBox(width: 10), Expanded(child: Text(p.name, style: t(12))), Text(p.macAdress, style: mono(9, c: K.dim))])),
           ),
+        ],
         h('Data'),
         Text('All data is stored on this device (SQLite). Back it up regularly - if the phone is lost, so is your fiscal history.', style: t(11, w: FontWeight.w500, c: K.muted, h: 1.5)),
         const SizedBox(height: 10),

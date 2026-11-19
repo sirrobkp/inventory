@@ -8,6 +8,7 @@ import '../services/printer_service.dart';
 import '../services/report_service.dart';
 import '../services/tra_service.dart';
 import 'models.dart';
+import 'platform_info.dart';
 import 'repo.dart';
 
 class AppState extends ChangeNotifier {
@@ -34,7 +35,7 @@ class AppState extends ChangeNotifier {
   double get taxRate => (double.tryParse(cfg['income_tax_rate'] ?? '') ?? 30) / 100;
 
   /// 'direct' = own TRA certificate (EFDMS); 'supplier' = any VFD supplier via an imported API profile.
-  String get fiscalMode => cfg['fiscal_mode'] ?? 'direct';
+  String get fiscalMode => isDesktop ? 'supplier' : (cfg['fiscal_mode'] ?? 'direct');
   bool get registered => fiscalMode == 'supplier' ? cfg['supplier_ready'] == '1' : (cfg['regid'] ?? '').isNotEmpty;
   int get lowStockCount => products.where((p) => p.low).length;
   List<String> get categories => (products.map((p) => p.category).toSet().toList()..sort());

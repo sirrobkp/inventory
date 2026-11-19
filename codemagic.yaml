@@ -65,3 +65,50 @@ workflows:
       - build/KiboTrade-unsigned.ipa
       - build/xcodebuild.log
       - pubspec.lock
+
+  macos-app:
+    name: Kibo Trade - macOS app
+    instance_type: mac_mini_m2
+    max_build_duration: 45
+    environment:
+      flutter: stable
+      xcode: latest
+      cocoapods: default
+    scripts:
+      - name: Prepare macOS project
+        script: bash tool/prepare_macos.sh
+      - name: Get packages
+        script: flutter pub get
+      - name: Generate Podfile (no build yet)
+        script: flutter build macos --config-only --release || true
+      - name: Patch pod signing
+        script: bash tool/patch_macos_pods.sh
+      - name: Build macOS app
+        script: flutter build macos --release
+      - name: Zip the app
+        script: |
+          cd build/macos/Build/Products/Release
+          APP=$(ls -d *.app | head -1)
+          ditto -c -k --keepParent "$APP" "$CM_BUILD_DIR/build/KiboTrade-macos.zip"
+    artifacts:
+      - build/KiboTrade-macos.zip
+      - pubspec.lock
+
+  windows-app:
+    name: Kibo Trade - Windows app
+    instance_type: windows_x2
+    max_build_duration: 45
+    environment:
+      flutter: stable
+    scripts:
+      - name: Prepare Windows project
+        script: powershell -ExecutionPolicy Bypass -File tool/prepare_windows.ps1
+      - name: Get packages
+        script: flutter pub get
+      - name: Build Windows app
+        script: flutter build windows --release
+      - name: Zip the app
+        script: powershell -Command "Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath build\KiboTrade-windows.zip -Force"
+    artifacts:
+      - build/KiboTrade-windows.zip
+      - pubspec.lock
