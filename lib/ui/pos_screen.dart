@@ -8,6 +8,7 @@ import '../data/app_state.dart';
 import '../data/models.dart';
 import '../data/tax.dart';
 import '../data/platform_info.dart';
+import 'responsive.dart';
 import 'scanner_listener.dart';
 import 'scanner_screen.dart';
 import 'icons.dart';
@@ -72,13 +73,7 @@ class PosScreen extends StatelessWidget {
     });
     final total = s.cartTotal;
 
-    return ScannerListener(
-      onScan: (code) => _onExternalScan(context, code),
-      child: ListView(padding: const EdgeInsets.only(bottom: 130), children: [
-      Header(title: 'Point of Sale', subtitle: s.registered ? 'VFD ${s.cfg['serial'] ?? ''} - ${s.online ? 'Online' : 'Offline'}' : 'Non-fiscal mode - VFD not registered'),
-      Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 20),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+    final scanCard = <Widget>[
           GestureDetector(
             onTap: () => _scan(context),
             child: Container(
@@ -93,7 +88,8 @@ class PosScreen extends StatelessWidget {
               ]),
             ),
           ),
-          const SizedBox(height: 18),
+    ];
+    final cartList = <Widget>[
           Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
             Text('Current order', style: t(14, w: FontWeight.w800)),
             Row(children: [
@@ -138,9 +134,33 @@ class PosScreen extends StatelessWidget {
               LimeButton('Charge customer', icon: Ic.creditCard, onTap: s.cart.isEmpty ? null : () => showSheet(context, _PaymentSheet(total: total, host: context))),
             ]),
           ),
+    ];
+    final header = Header(title: 'Point of Sale', subtitle: s.registered ? 'VFD ${s.cfg['serial'] ?? ''} - ${s.online ? 'Online' : 'Offline'}' : 'Non-fiscal mode - VFD not registered');
+    if (!isWide(context)) {
+      return ScannerListener(
+        onScan: (code) => _onExternalScan(context, code),
+        child: ListView(padding: EdgeInsets.only(bottom: bottomPad(context)), children: [
+          header,
+          Padding(padding: const EdgeInsets.symmetric(horizontal: 20), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [...scanCard, const SizedBox(height: 18), ...cartList])),
         ]),
-      ),
-    ]),
+      );
+    }
+    // Desktop / tablet: product catalogue on the left, the order on the right
+    return ScannerListener(
+      onScan: (code) => _onExternalScan(context, code),
+      child: Column(children: [
+        header,
+        Expanded(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(28, 0, 28, 24),
+            child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              const Expanded(child: _CatalogPane()),
+              const SizedBox(width: 24),
+              SizedBox(width: 430, child: ListView(padding: EdgeInsets.zero, children: cartList)),
+            ]),
+          ),
+        ),
+      ]),
     );
   }
 }
@@ -329,6 +349,102 @@ class _SuccessSheetState extends State<_SuccessSheet> {
       ),
       const SizedBox(height: 4),
       Text(DateFormat('dd MMM yyyy HH:mm').format(sale.createdAt), style: t(9, w: FontWeight.w500, c: K.dim)),
+    ]);
+  }
+}
+
+
+// ------------------------------------------------------------ desktop catalogue pane
+class _CatalogPane extends StatefulWidget {
+  const _CatalogPane();
+  @override
+  State<_CatalogPane> createState() => _CatalogPaneState();
+}
+
+class _CatalogPaneState extends State<_CatalogPane> {
+  final _q = TextEditingController();
+  final _focus = FocusNode();
+  String _cat = '';
+
+  @override
+  void dispose() {
+    _q.dispose();
+    _focus.dispose();
+    super.dispose();
+  }
+
+  /// Enter (typed or from a barcode scanner): exact barcode/SKU match goes straight into the cart.
+  Future<void> _submit(AppState s, String v) async {
+    final code = v.trim();
+    if (code.isNotEmpty) {
+      final p = await s.repo.findByCode(code);
+      if (!mounted) return;
+      if (p != null) {
+        final e = s.addToCart(p);
+        HapticFeedback.lightImpact();
+        toast(context, e ?? 'Added: ${p.name}');
+        _q.clear();
+        setState(() {});
+      }
+    }
+    _focus.requestFocus();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final s = context.watch<AppState>();
+    final q = _q.text.toLowerCase();
+    final list = s.products.where((p) => (_cat.isEmpty || p.category == _cat) && (p.name.toLowerCase().contains(q) || p.sku.toLowerCase().contains(q) || p.barcode.contains(_q.text))).toList();
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      TextField(
+        controller: _q,
+        focusNode: _focus,
+        autofocus: true,
+        onChanged: (_) => setState(() {}),
+        onEditingComplete: () {},
+        onSubmitted: (v) => _submit(s, v),
+        style: t(13, w: FontWeight.w500),
+        decoration: dec(null, hint: 'Scan a barcode or search products', prefix: const Icon(Ic.scan, size: 18, color: K.lime)),
+      ),
+      const SizedBox(height: 12),
+      SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(children: [
+          Chip2('All', selected: _cat.isEmpty, onTap: () => setState(() => _cat = '')),
+          for (final c in s.categories) Padding(padding: const EdgeInsets.only(left: 8), child: Chip2(c, selected: _cat == c, onTap: () => setState(() => _cat = c))),
+        ]),
+      ),
+      const SizedBox(height: 14),
+      Expanded(
+        child: list.isEmpty
+            ? Empty(s.products.isEmpty ? 'No products yet. Add them in the Stock tab.' : 'No products match.')
+            : GridView.builder(
+                gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(maxCrossAxisExtent: 210, mainAxisExtent: 138, crossAxisSpacing: 12, mainAxisSpacing: 12),
+                itemCount: list.length,
+                itemBuilder: (_, i) {
+                  final p = list[i];
+                  final out = p.stock <= 0;
+                  return Opacity(
+                    opacity: out ? .45 : 1,
+                    child: Glass(
+                      radius: 20,
+                      padding: const EdgeInsets.all(12),
+                      onTap: () {
+                        final e = out ? 'Out of stock' : s.addToCart(p);
+                        if (e != null) toast(context, e);
+                        _focus.requestFocus();
+                      },
+                      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Avatar(p, size: 36), Badge2('${fmtQty(p.stock)} ${p.unit}', color: p.low ? const Color(0xFFFF8066) : K.lime)]),
+                        const SizedBox(height: 10),
+                        Expanded(child: Text(p.name, maxLines: 2, overflow: TextOverflow.ellipsis, style: t(12))),
+                        Text(money(p.price), style: t(12, w: FontWeight.w800, c: K.lime)),
+                      ]),
+                    ),
+                  );
+                },
+              ),
+      ),
     ]);
   }
 }

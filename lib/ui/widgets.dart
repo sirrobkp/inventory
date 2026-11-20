@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../data/app_state.dart';
 import '../data/models.dart';
 import 'icons.dart';
+import 'responsive.dart';
 import 'theme.dart';
 
 class Glass extends StatelessWidget {
@@ -26,7 +27,7 @@ class Glass extends StatelessWidget {
       ),
       child: child,
     );
-    return onTap == null ? box : GestureDetector(onTap: onTap, behavior: HitTestBehavior.opaque, child: box);
+    return onTap == null ? box : MouseRegion(cursor: SystemMouseCursors.click, child: GestureDetector(onTap: onTap, behavior: HitTestBehavior.opaque, child: box));
   }
 }
 
@@ -52,7 +53,9 @@ class IconBtn extends StatelessWidget {
   final bool dot, filled;
   final double size;
   @override
-  Widget build(BuildContext context) => GestureDetector(
+  Widget build(BuildContext context) => MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
         onTap: onTap,
         child: Container(
           width: size,
@@ -76,7 +79,7 @@ class IconBtn extends StatelessWidget {
               ),
           ]),
         ),
-      );
+      ));
 }
 
 class Header extends StatelessWidget {
@@ -90,16 +93,16 @@ class Header extends StatelessWidget {
     final alerts = s.lowStockCount + s.dash.pendingCount;
     final hour = DateTime.now().hour;
     final greet = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
+    final wide = isWide(context);
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 20, 20, 16),
+      padding: wide ? const EdgeInsets.fromLTRB(28, 28, 28, 20) : const EdgeInsets.fromLTRB(20, 20, 20, 16),
       child: Row(children: [
-        const LogoMark(),
-        const SizedBox(width: 12),
+        if (!wide) ...[const LogoMark(), const SizedBox(width: 12)],
         Expanded(
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text((subtitle ?? greet).toUpperCase(), style: t(10, w: FontWeight.w800, c: K.muted, ls: 2)),
             const SizedBox(height: 2),
-            Text(title, style: t(19, w: FontWeight.w800, ls: -0.7)),
+            Text(title, style: t(wide ? 24 : 19, w: FontWeight.w800, ls: -0.7)),
           ]),
         ),
         for (final a in actions) ...[a, const SizedBox(width: 8)],
@@ -193,7 +196,9 @@ class Chip2 extends StatelessWidget {
   final bool selected;
   final VoidCallback? onTap;
   @override
-  Widget build(BuildContext context) => GestureDetector(
+  Widget build(BuildContext context) => MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
         onTap: onTap,
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
@@ -204,7 +209,7 @@ class Chip2 extends StatelessWidget {
           ),
           child: Text(text, style: t(11, c: selected ? const Color(0xFF101A17) : const Color(0xFF7E8D87))),
         ),
-      );
+      ));
 }
 
 class Badge2 extends StatelessWidget {
@@ -231,7 +236,9 @@ class LimeButton extends StatelessWidget {
     final fg = outline ? K.lime : const Color(0xFF101A17);
     return Opacity(
       opacity: enabled ? 1 : .45,
-      child: GestureDetector(
+      child: MouseRegion(
+        cursor: enabled ? SystemMouseCursors.click : SystemMouseCursors.basic,
+        child: GestureDetector(
         onTap: enabled ? onTap : null,
         child: Container(
           width: double.infinity,
@@ -250,7 +257,7 @@ class LimeButton extends StatelessWidget {
             Text(label, style: t(13, w: FontWeight.w800, c: fg)),
           ]),
         ),
-      ),
+      )),
     );
   }
 }
@@ -277,7 +284,24 @@ class Empty extends StatelessWidget {
   Widget build(BuildContext context) => Padding(padding: const EdgeInsets.all(28), child: Center(child: Text(text, textAlign: TextAlign.center, style: t(12, w: FontWeight.w500, c: K.dim, h: 1.5))));
 }
 
-Future<T?> showSheet<T>(BuildContext context, Widget child) => showModalBottomSheet<T>(
+Future<T?> showSheet<T>(BuildContext context, Widget child) {
+  if (isWide(context)) {
+    return showDialog<T>(
+      context: context,
+      barrierColor: const Color(0xB3000000),
+      builder: (_) => Dialog(
+        backgroundColor: K.sheet,
+        surfaceTintColor: Colors.transparent,
+        insetPadding: const EdgeInsets.all(24),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28), side: const BorderSide(color: K.border)),
+        child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 520), child: SingleChildScrollView(padding: const EdgeInsets.all(24), child: child)),
+      ),
+    );
+  }
+  return _bottomSheet<T>(context, child);
+}
+
+Future<T?> _bottomSheet<T>(BuildContext context, Widget child) => showModalBottomSheet<T>(
       context: context,
       isScrollControlled: true,
       useSafeArea: true,

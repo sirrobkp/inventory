@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 
 import '../data/app_state.dart';
 import 'icons.dart';
+import 'responsive.dart';
 import 'theme.dart';
 import 'widgets.dart';
 
@@ -16,11 +17,7 @@ class HomeScreen extends StatelessWidget {
     final d = s.dash;
     final low = s.products.where((p) => p.low).take(3).toList();
     final name = (s.cfg['biz_name'] ?? '').isNotEmpty ? s.cfg['biz_name']! : 'Kibo Trade';
-    return ListView(padding: const EdgeInsets.only(bottom: 130), children: [
-      Header(title: name),
-      Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 20),
-        child: Column(children: [
+    final left = <Widget>[
           Glass(
             radius: 30,
             padding: const EdgeInsets.all(20),
@@ -57,6 +54,8 @@ class HomeScreen extends StatelessWidget {
             Expanded(child: MetricCard(label: 'Stock value', value: compact(d.stockValue), note: '${d.productCount} active items', icon: Ic.bag)),
           ]),
           const SizedBox(height: 16),
+    ];
+    final right = <Widget>[
           _SalesChart(week: d.week),
           const SizedBox(height: 12),
           SectionTitle('Needs attention', action: 'View all', onAction: () => s.setTab(1)),
@@ -88,8 +87,10 @@ class HomeScreen extends StatelessWidget {
                       ),
                   ]),
           ),
-        ]),
-      ),
+    ];
+    return ListView(padding: EdgeInsets.only(bottom: bottomPad(context)), children: [
+      Header(title: name),
+      Padding(padding: EdgeInsets.symmetric(horizontal: hPad(context)), child: twoPane(context, left: left, right: right, crossAxis: CrossAxisAlignment.center)),
     ]);
   }
 }

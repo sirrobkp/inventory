@@ -6,6 +6,7 @@ import '../data/app_state.dart';
 import '../data/models.dart';
 import '../data/repo.dart';
 import 'reports_screen.dart';
+import 'responsive.dart';
 import 'sdl_screen.dart';
 import 'settings_screen.dart';
 import 'icons.dart';
@@ -52,11 +53,7 @@ class _TraScreenState extends State<TraScreen> {
     final failed = s.recent.where((e) => e.uploadStatus == 'failed').toList();
     final nextDue = DateFormat('d MMM').format(DateTime(now.year, now.month + 1, 20));
 
-    return ListView(padding: const EdgeInsets.only(bottom: 130), children: [
-      Header(title: 'TRA Connect', subtitle: 'Tax & fiscal center', actions: [IconBtn(Ic.settings, onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SettingsScreen())))]),
-      Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 20),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+    final left = <Widget>[
           // VFD card
           Container(
             padding: const EdgeInsets.all(20),
@@ -78,7 +75,7 @@ class _TraScreenState extends State<TraScreen> {
                 const SizedBox(height: 8),
                 Text('Import your TRA certificate and register in Settings. Until then sales are non-fiscal.', style: t(11, w: FontWeight.w500, c: K.muted, h: 1.5)),
                 const SizedBox(height: 14),
-                LimeButton('Open setup', icon: Ic.settings, onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SettingsScreen()))),
+                LimeButton('Open setup', icon: Ic.settings, onTap: () => Navigator.push(context, pageRoute(const SettingsScreen()))),
               ] else ...[
                 const SizedBox(height: 18),
                 Container(
@@ -151,8 +148,10 @@ class _TraScreenState extends State<TraScreen> {
             ]),
           ),
           const SizedBox(height: 14),
+    ];
+    final right = <Widget>[
           GestureDetector(
-            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ReportsScreen())),
+            onTap: () => Navigator.push(context, pageRoute(const ReportsScreen())),
             child: Container(
               padding: const EdgeInsets.all(18),
               decoration: BoxDecoration(color: K.card, borderRadius: BorderRadius.circular(24), border: Border.all(color: const Color(0x40C9FF55))),
@@ -166,7 +165,7 @@ class _TraScreenState extends State<TraScreen> {
           ),
           const SizedBox(height: 10),
           GestureDetector(
-            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SdlScreen())),
+            onTap: () => Navigator.push(context, pageRoute(const SdlScreen())),
             child: Container(
               padding: const EdgeInsets.all(18),
               decoration: BoxDecoration(color: K.card, borderRadius: BorderRadius.circular(24), border: Border.all(color: K.border)),
@@ -203,8 +202,10 @@ class _TraScreenState extends State<TraScreen> {
                       ),
                   ]),
           ),
-        ]),
-      ),
+    ];
+    return ListView(padding: EdgeInsets.only(bottom: bottomPad(context)), children: [
+      Header(title: 'TRA Connect', subtitle: 'Tax & fiscal center', actions: [IconBtn(Ic.settings, onTap: () => Navigator.push(context, pageRoute(const SettingsScreen())))]),
+      Padding(padding: EdgeInsets.symmetric(horizontal: hPad(context)), child: twoPane(context, left: left, right: right)),
     ]);
   }
 

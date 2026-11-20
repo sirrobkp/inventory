@@ -28,10 +28,5 @@ class KiboApp extends StatelessWidget {
         debugShowCheckedModeBanner: false,
         theme: buildTheme(),
         home: const Shell(),
-        // Phone-shaped UI: on a wide desktop window keep it centred and readable
-        builder: (context, child) => ColoredBox(
-          color: K.bg,
-          child: Align(alignment: Alignment.topCenter, child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 600), child: child)),
-        ),
       );
 }

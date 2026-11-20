@@ -5,6 +5,7 @@ import '../data/app_state.dart';
 import '../data/models.dart';
 import '../data/tax.dart';
 import '../data/platform_info.dart';
+import 'responsive.dart';
 import 'scanner_screen.dart';
 import 'icons.dart';
 import 'theme.dart';
@@ -68,42 +69,8 @@ class _InventoryScreenState extends State<InventoryScreen> {
       final m = p.name.toLowerCase().contains(q) || p.sku.toLowerCase().contains(q) || p.barcode.contains(q);
       return m && (!_lowOnly || p.low) && (_cat == null || p.category == _cat);
     }).toList();
-    return ListView(padding: const EdgeInsets.only(bottom: 130), children: [
-      Header(title: 'Inventory', subtitle: '${s.products.length} products'),
-      Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 20),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Row(children: [
-            Expanded(
-              child: TextField(
-                controller: _search,
-                onChanged: (v) => setState(() => _q = v),
-                style: t(12, w: FontWeight.w500),
-                decoration: dec(null, hint: 'Search product, SKU or barcode', prefix: const Icon(Ic.search, size: 18, color: Color(0xFF778780))),
-              ),
-            ),
-            const SizedBox(width: 8),
-            IconBtn(Ic.scan, filled: true, size: 50, onTap: _scan),
-          ]),
-          const SizedBox(height: 14),
-          Wrap(spacing: 8, children: [
-            Chip2('All', selected: !_lowOnly, onTap: () => setState(() => _lowOnly = false)),
-            Chip2('Low stock', selected: _lowOnly, onTap: () => setState(() => _lowOnly = true)),
-            Chip2(_cat ?? 'Category', selected: _cat != null, onTap: () => _pickCategory(s)),
-          ]),
-          const SizedBox(height: 16),
-          Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, crossAxisAlignment: CrossAxisAlignment.end, children: [
-            Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text('TOTAL STOCK VALUE (AT COST)', style: t(10, w: FontWeight.w800, c: const Color(0xFF718079), ls: 1.8)),
-              const SizedBox(height: 4),
-              Text(money(s.dash.stockValue), style: t(18, w: FontWeight.w800, ls: -0.5)),
-            ]),
-            Text('Updated now', style: t(10, c: K.lime)),
-          ]),
-          const SizedBox(height: 12),
-          if (list.isEmpty) Empty(s.products.isEmpty ? 'No products yet.\nTap "Add new product" to start your catalogue.' : 'No products match your filters.'),
-          for (final p in list)
-            Padding(
+    final wide = isWide(context);
+    Widget tile(Product p) => Padding(
               padding: const EdgeInsets.only(bottom: 10),
               child: Glass(
                 radius: 22,
@@ -128,7 +95,50 @@ class _InventoryScreenState extends State<InventoryScreen> {
                   ]),
                 ]),
               ),
+            );
+    return ListView(padding: EdgeInsets.only(bottom: bottomPad(context)), children: [
+      Header(title: 'Inventory', subtitle: '${s.products.length} products'),
+      Padding(
+        padding: EdgeInsets.symmetric(horizontal: hPad(context)),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            Expanded(
+              child: TextField(
+                controller: _search,
+                onChanged: (v) => setState(() => _q = v),
+                style: t(12, w: FontWeight.w500),
+                decoration: dec(null, hint: 'Search product, SKU or barcode', prefix: const Icon(Ic.search, size: 18, color: Color(0xFF778780))),
+              ),
             ),
+            const SizedBox(width: 8),
+            IconBtn(Ic.scan, filled: true, size: 50, onTap: _scan),
+            if (wide) ...[const SizedBox(width: 10), SizedBox(width: 190, child: LimeButton('Add product', icon: Ic.plus, onTap: () => showSheet(context, const ProductForm())))],
+          ]),
+          const SizedBox(height: 14),
+          Wrap(spacing: 8, children: [
+            Chip2('All', selected: !_lowOnly, onTap: () => setState(() => _lowOnly = false)),
+            Chip2('Low stock', selected: _lowOnly, onTap: () => setState(() => _lowOnly = true)),
+            Chip2(_cat ?? 'Category', selected: _cat != null, onTap: () => _pickCategory(s)),
+          ]),
+          const SizedBox(height: 16),
+          Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, crossAxisAlignment: CrossAxisAlignment.end, children: [
+            Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('TOTAL STOCK VALUE (AT COST)', style: t(10, w: FontWeight.w800, c: const Color(0xFF718079), ls: 1.8)),
+              const SizedBox(height: 4),
+              Text(money(s.dash.stockValue), style: t(18, w: FontWeight.w800, ls: -0.5)),
+            ]),
+            Text('Updated now', style: t(10, c: K.lime)),
+          ]),
+          const SizedBox(height: 12),
+          if (list.isEmpty) Empty(s.products.isEmpty ? 'No products yet.\nTap "Add new product" to start your catalogue.' : 'No products match your filters.'),
+          if (!wide) for (final p in list) tile(p),
+          if (wide) GridView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(maxCrossAxisExtent: 460, mainAxisExtent: 104, crossAxisSpacing: 14),
+            itemCount: list.length,
+            itemBuilder: (_, i) => tile(list[i]),
+          ),
           const SizedBox(height: 6),
           GestureDetector(
             onTap: () => showSheet(context, const ProductForm()),
