@@ -85,6 +85,12 @@ class VfdProfile {
     "verifyUrlPath": "data.verifyUrl",
     "messagePath": "message"
   },
+  "creditNote": {
+    "method": "POST",
+    "path": "/v1/credit-notes",
+    "contentType": "json",
+    "body": "{\"reference\":\"{{ret.id}}\",\"originalReceipt\":\"{{orig.verificationCode}}\",\"reason\":\"{{ret.reason}}\",\"datetime\":\"{{ret.datetime}}\",\"total\":{{ret.total}},\"items\":[{{#items|,}}{\"name\":\"{{item.name}}\",\"qty\":{{item.qty}},\"price\":{{item.price}},\"taxCode\":\"{{item.taxCode}}\"}{{/items}}]}"
+  },
   "test": {"method": "GET", "path": "/v1/ping"}
 }''';
 }
@@ -169,10 +175,12 @@ class GenericVfdService {
         'sale.itemCount': '${s.items.length}',
       };
 
-  List<Map<String, String>> itemRows(Sale s) => [
-        for (var i = 0; i < s.items.length; i++)
+  List<Map<String, String>> itemRows(Sale s) => itemRowsOf(s.items);
+
+  List<Map<String, String>> itemRowsOf(List<SaleItem> items) => [
+        for (var i = 0; i < items.length; i++)
           () {
-            final it = s.items[i];
+            final it = items[i];
             final sp = splitGross(it.amount, it.taxCode);
             return {
               'item.index': '${i + 1}',
@@ -190,8 +198,10 @@ class GenericVfdService {
           }(),
       ];
 
-  List<Map<String, String>> vatRows(Sale s) => [
-        for (final v in s.vat) {'vat.code': v.code, 'vat.rate': ((taxRates[v.code] ?? 0) * 100).toStringAsFixed(0), 'vat.net': _f(v.net), 'vat.tax': _f(v.vat), 'vat.gross': _f(v.gross)},
+  List<Map<String, String>> vatRows(Sale s) => vatRowsOf(s.vat);
+
+  List<Map<String, String>> vatRowsOf(List<VatLine> vat) => [
+        for (final v in vat) {'vat.code': v.code, 'vat.rate': ((taxRates[v.code] ?? 0) * 100).toStringAsFixed(0), 'vat.net': _f(v.net), 'vat.tax': _f(v.vat), 'vat.gross': _f(v.gross)},
       ];
 
   Future<Map<String, String>> _baseVars(VfdProfile p) async => {...await repo.allSettings(), ...await credentials(p)};
@@ -284,13 +294,50 @@ class GenericVfdService {
   Future<TraResult> submit(Sale s) async {
     final p = await profile();
     if (p == null) return TraResult(ok: false, code: 'CFG', msg: 'No supplier profile imported', retryLater: true);
+    final vars = {...await _baseVars(p), ...saleVars(s)};
+    return _exec(p, p.sec('receipt'), p.sec('response'), vars, {'items': itemRows(s), 'vat': vatRows(s)}, 'RECEIPT ${s.number}');
+  }
+
+  /// Does the imported profile know how to issue credit notes (sales returns)?
+  Future<bool> hasCreditNote() async {
+    final c = (await profile())?.sec('creditNote') ?? const {};
+    return c['path'] is String && c['body'] is String;
+  }
+
+  /// Sends a credit note (sales return) to the supplier using the profile's optional "creditNote" section.
+  /// Extra placeholders: {{ret.*}} for the return and {{orig.*}} for the original receipt.
+  Future<TraResult> submitReturn(SaleReturn r, Sale orig) async {
+    final p = await profile();
+    if (p == null) return TraResult(ok: false, code: 'CFG', msg: 'No supplier profile imported', retryLater: true);
+    final cn = p.sec('creditNote');
+    if (cn['path'] is! String || cn['body'] is! String) return TraResult(ok: false, code: 'CFG', msg: 'Profile has no "creditNote" section - issue the credit note in your supplier portal');
+    final vars = {
+      ...await _baseVars(p),
+      ...saleVars(orig),
+      'ret.id': '${r.id}',
+      'ret.number': r.number,
+      'ret.date': DateFormat('yyyy-MM-dd').format(r.createdAt),
+      'ret.time': DateFormat('HH:mm:ss').format(r.createdAt),
+      'ret.datetime': DateFormat("yyyy-MM-dd'T'HH:mm:ss").format(r.createdAt),
+      'ret.total': _f(r.totalIncl),
+      'ret.totalExcl': _f(r.totalExcl),
+      'ret.vat': _f(r.totalVat),
+      'ret.reason': r.reason,
+      'orig.id': '${orig.id}',
+      'orig.number': orig.number,
+      'orig.verificationCode': orig.rctvnum,
+      'orig.date': DateFormat('yyyy-MM-dd').format(orig.createdAt),
+    };
+    final resp = p.sec('creditNote')['response'] is Map ? (p.sec('creditNote')['response'] as Map).cast<String, dynamic>() : p.sec('response');
+    return _exec(p, cn, resp, vars, {'items': itemRowsOf(r.items), 'vat': vatRowsOf(r.vat)}, 'CREDIT NOTE ${r.number}');
+  }
+
+  Future<TraResult> _exec(VfdProfile p, Map<String, dynamic> rc, Map<String, dynamic> r, Map<String, String> vars, Map<String, List<Map<String, String>>> loops, String label) async {
     try {
-      final vars = {...await _baseVars(p), ...saleVars(s)};
-      final rc = p.sec('receipt');
       final mode = (rc['contentType'] as String?) ?? 'json';
-      final body = Tpl.render(rc['body'] as String, vars, loops: {'items': itemRows(s), 'vat': vatRows(s)}, mode: mode);
+      final body = Tpl.render(rc['body'] as String, vars, loops: loops, mode: mode);
       final res = await _send((rc['method'] as String?) ?? 'POST', _url(p, vars, rc['path']), await _authHeaders(p, vars, mode), body);
-      await _remember('RECEIPT ${s.number}', res);
+      await _remember(label, res);
 
       if (res.statusCode == 401 || res.statusCode == 403) {
         _token = null;
@@ -299,7 +346,6 @@ class GenericVfdService {
       if (res.statusCode >= 500 || res.statusCode == 408 || res.statusCode == 429) {
         return TraResult(ok: false, code: '${res.statusCode}', msg: 'Supplier unavailable', retryLater: true);
       }
-      final r = p.sec('response');
       final okPath = r['successPath'] as String?;
       bool ok;
       if (okPath != null && okPath.isNotEmpty) {

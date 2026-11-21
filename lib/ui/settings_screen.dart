@@ -13,6 +13,7 @@ import '../data/db.dart';
 import '../services/tra_service.dart';
 import 'icons.dart';
 import '../data/platform_info.dart';
+import 'cloud_panel.dart';
 import 'supplier_panel.dart';
 import 'theme.dart';
 import 'widgets.dart';
@@ -194,6 +195,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
             }, child: Row(children: [const Icon(Ic.printer, size: 18, color: K.lime), const SizedBox(width: 10), Expanded(child: Text(p.name, style: t(12))), Text(p.macAdress, style: mono(9, c: K.dim))])),
           ),
         ],
+        h('Cloud backup (Firebase)'),
+        const CloudPanel(),
         h('Data'),
         Text('All data is stored on this device (SQLite). Back it up regularly - if the phone is lost, so is your fiscal history.', style: t(11, w: FontWeight.w500, c: K.muted, h: 1.5)),
         const SizedBox(height: 10),

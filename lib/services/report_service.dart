@@ -46,6 +46,9 @@ class ReportService {
       for (final e in s)
         [e.day, DateFormat('HH:mm:ss').format(e.createdAt), e.fiscal ? e.number : '', e.fiscal ? e.dc : '', e.rctvnum, e.znum, e.customerName, e.customerId, e.paymentType, _n(e.totalExcl), _n(e.totalVat), _n(e.totalIncl), e.fiscal ? 'Y' : 'N', e.uploadStatus, e.ackMsg ?? ''],
     ];
+    for (final r in await repo.saleReturns(dayFmt.format(from), dayFmt.format(to))) {
+      rows.add([r.day, DateFormat('HH:mm:ss').format(r.createdAt), 'Credit note ${r.number} (for ${r.saleNumber})', '', r.verifyCode, '', '', '', 'CREDIT NOTE', _n(-r.totalExcl), _n(-r.totalVat), _n(-r.totalIncl), 'Y', r.uploadStatus, r.ackMsg ?? '']);
+    }
     return _write('sales_schedule_${_tag(from, to)}.csv', csv(rows));
   }
 
@@ -58,6 +61,9 @@ class ReportService {
       for (final x in p) [x.date, 'Stock purchase', x.supplier, x.supplierTin, x.invoiceNo, x.efdReceipt, x.product, _n(x.net), _n(x.vat), _n(x.gross)],
       for (final x in e) [x.date, 'Expense: ${x.category}', '', x.supplierTin, x.ref, '', x.description, _n(x.net), _n(x.vat), _n(x.gross)],
     ];
+    for (final r in await repo.purchaseReturns(f, t)) {
+      rows.add([r.day, 'Purchase return (debit note ${r.number})', r.supplier, '', r.invoiceNo, '', '${r.product} x${r.qty}', _n(-r.net), _n(-r.vat), _n(-r.gross)]);
+    }
     return _write('purchases_schedule_${_tag(from, to)}.csv', csv(rows));
   }
 

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/foundation.dart';
 
+import '../services/cloud_service.dart';
 import '../services/generic_vfd_service.dart';
 import '../services/printer_service.dart';
 import '../services/report_service.dart';
@@ -15,6 +16,8 @@ class AppState extends ChangeNotifier {
   final repo = Repo();
   late final GenericVfdService vfd = GenericVfdService(repo);
   late final TraService tra = TraService(repo, vfd);
+  late final CloudService cloud = CloudService(repo);
+  bool _backingUp = false;
   late final ReportService reports = ReportService(repo);
   final printer = PrinterService();
 
@@ -43,13 +46,32 @@ class AppState extends ChangeNotifier {
   // ------------------------------------------------------------------ lifecycle
   Future<void> init() async {
     await refresh();
-    _timer = Timer.periodic(const Duration(seconds: 60), (_) => syncNow(silent: true));
+    _timer = Timer.periodic(const Duration(seconds: 60), (_) {
+      syncNow(silent: true);
+      maybeAutoBackup();
+    });
     _conn = Connectivity().onConnectivityChanged.listen((r) {
       online = !r.contains(ConnectivityResult.none);
       notifyListeners();
       if (online) syncNow(silent: true);
     });
     unawaited(syncNow(silent: true));
+    unawaited(maybeAutoBackup());
+  }
+
+  /// Cloud backup at most every 6 hours, only when enabled, configured and online.
+  Future<void> maybeAutoBackup() async {
+    if (_backingUp || !online || cfg['cloud_auto'] != '1' || !await cloud.configured) return;
+    final last = DateTime.tryParse(cfg['cloud_last_backup'] ?? '');
+    if (last != null && DateTime.now().difference(last) < const Duration(hours: 6)) return;
+    _backingUp = true;
+    try {
+      await cloud.backup();
+      await refresh();
+    } catch (_) {
+      // stays quiet; the manual button shows the error
+    }
+    _backingUp = false;
   }
 
   @override
@@ -168,6 +190,28 @@ class AppState extends ChangeNotifier {
 
   Future<void> receiveStock(Product p, {required double qty, required double unitCost, String supplier = '', String supplierTin = '', String invoiceNo = '', String efdReceipt = '', DateTime? date, bool paid = true}) async {
     await repo.receiveStock(p, qty: qty, unitCostExcl: unitCost, supplier: supplier, supplierTin: supplierTin, invoiceNo: invoiceNo, efdReceipt: efdReceipt, date: date ?? DateTime.now(), paid: paid);
+    await refresh();
+  }
+
+  // ------------------------------------------------------------ returns & credit payments
+  /// Credit note. Sent to the supplier automatically when the imported profile has a "creditNote" section;
+  /// otherwise it is recorded as 'manual' (issue it in your supplier portal, then mark it issued).
+  Future<int> createSaleReturn(Sale sale, Map<int, double> qtys, String reason) async {
+    var status = 'manual';
+    if (fiscalMode == 'supplier' && await vfd.hasCreditNote()) status = 'queued';
+    final id = await repo.createSaleReturn(saleId: sale.id!, qtyByItemId: qtys, reason: reason, status: status);
+    await refresh();
+    if (status == 'queued') unawaited(syncNow(silent: true));
+    return id;
+  }
+
+  Future<void> createPurchaseReturn(int purchaseId, double qty, String note) async {
+    await repo.createPurchaseReturn(purchaseId: purchaseId, qty: qty, note: note);
+    await refresh();
+  }
+
+  Future<void> addPayment(String kind, int refId, double amount, String note) async {
+    await repo.addPayment(kind: kind, refId: refId, amount: amount, date: DateTime.now(), note: note);
     await refresh();
   }
 

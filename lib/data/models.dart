@@ -68,11 +68,12 @@ class CartLine {
 }
 
 class SaleItem {
-  SaleItem({required this.productId, required this.name, required this.sku, required this.qty, required this.unitPrice, required this.amount, required this.cost, required this.taxCode});
-  final int? productId;
+  SaleItem({this.id, required this.productId, required this.name, required this.sku, required this.qty, required this.unitPrice, required this.amount, required this.cost, required this.taxCode});
+  final int? id, productId;
   final String name, sku, taxCode;
   final double qty, unitPrice, amount, cost;
   factory SaleItem.fromMap(Map<String, Object?> m) => SaleItem(
+        id: m['id'] as int?,
         productId: m['product_id'] as int?,
         name: m['name'] as String,
         sku: (m['sku'] as String?) ?? '',
@@ -223,9 +224,12 @@ class Statement {
 }
 
 class Purchase {
-  Purchase(this.date, this.product, this.qty, this.net, this.vat, this.gross, this.supplier, this.supplierTin, this.invoiceNo, this.efdReceipt);
+  Purchase(this.date, this.product, this.qty, this.net, this.vat, this.gross, this.supplier, this.supplierTin, this.invoiceNo, this.efdReceipt, {this.id, this.paid = true, this.returned = 0, this.productId});
   final String date, product, supplier, supplierTin, invoiceNo, efdReceipt;
-  final double qty, net, vat, gross;
+  final double qty, net, vat, gross, returned;
+  final int? id, productId;
+  final bool paid;
+  double get returnable => qty - returned;
   factory Purchase.fromMap(Map<String, Object?> m) => Purchase(
         m['date'] as String,
         (m['product_name'] as String?) ?? '',
@@ -237,6 +241,10 @@ class Purchase {
         (m['supplier_tin'] as String?) ?? '',
         (m['invoice_no'] as String?) ?? '',
         (m['efd_receipt'] as String?) ?? '',
+        id: m['id'] as int?,
+        paid: (m['paid'] as int? ?? 1) == 1,
+        returned: _n(m['returned']),
+        productId: m['product_id'] as int?,
       );
 }
 
@@ -321,4 +329,88 @@ class Period {
   Period(this.st, this.open, this.close);
   final Statement st;
   final Cum open, close;
+}
+
+/// An item of an original sale with the quantity that can still be returned.
+class ReturnableItem {
+  ReturnableItem(this.item, this.remaining);
+  final SaleItem item;
+  final double remaining;
+}
+
+/// A sales return = credit note.
+class SaleReturn {
+  SaleReturn({required this.id, required this.createdAt, required this.day, required this.saleId, required this.saleNumber, required this.reason, required this.totalExcl, required this.totalVat, required this.totalIncl, required this.cogs, required this.credit, required this.uploadStatus, this.lastError, this.ackMsg, this.fiscalNo = '', this.verifyCode = '', this.verifyUrl = '', this.items = const [], this.vat = const []});
+  final int id, saleId;
+  final DateTime createdAt;
+  final String day, saleNumber, reason, uploadStatus, fiscalNo, verifyCode, verifyUrl;
+  final double totalExcl, totalVat, totalIncl, cogs;
+  final bool credit;
+  final String? lastError, ackMsg;
+  final List<SaleItem> items;
+  final List<VatLine> vat;
+  String get number => fiscalNo.isNotEmpty ? fiscalNo : 'CN-${id.toString().padLeft(5, '0')}';
+  String get statusLabel => uploadStatus == 'uploaded' ? 'Fiscalised' : uploadStatus == 'queued' ? 'Queued for supplier' : uploadStatus == 'failed' ? 'Rejected' : uploadStatus == 'manual' ? 'Issue manually' : 'Non-fiscal';
+
+  factory SaleReturn.fromMap(Map<String, Object?> m, {List<SaleItem> items = const [], List<VatLine> vat = const []}) {
+    final gc = (m['gc'] as int?) ?? 0;
+    final fn = (m['sale_fiscal_no'] as String?) ?? '';
+    return SaleReturn(
+      id: m['id'] as int,
+      createdAt: DateTime.parse(m['created_at'] as String),
+      day: m['day'] as String,
+      saleId: m['sale_id'] as int,
+      saleNumber: fn.isNotEmpty ? fn : (gc > 0 ? gc.toString().padLeft(6, '0') : 'NF-${m['sale_id']}'),
+      reason: (m['reason'] as String?) ?? '',
+      totalExcl: _n(m['total_excl']),
+      totalVat: _n(m['total_vat']),
+      totalIncl: _n(m['total_incl']),
+      cogs: _n(m['cogs']),
+      credit: (m['credit'] as int? ?? 0) == 1,
+      uploadStatus: (m['upload_status'] as String?) ?? 'manual',
+      lastError: m['last_error'] as String?,
+      ackMsg: m['ack_msg'] as String?,
+      fiscalNo: (m['fiscal_no'] as String?) ?? '',
+      verifyCode: (m['verify_code'] as String?) ?? '',
+      verifyUrl: (m['verify_url'] as String?) ?? '',
+      items: items,
+      vat: vat,
+    );
+  }
+}
+
+/// A purchase return = debit note.
+class PurchaseReturn {
+  PurchaseReturn({required this.id, required this.createdAt, required this.day, required this.purchaseId, required this.product, required this.qty, required this.net, required this.vat, required this.gross, required this.note, required this.unpaid, this.supplier = '', this.invoiceNo = ''});
+  final int id, purchaseId;
+  final DateTime createdAt;
+  final String day, product, note, supplier, invoiceNo;
+  final double qty, net, vat, gross;
+  final bool unpaid;
+  String get number => 'DN-${id.toString().padLeft(5, '0')}';
+  factory PurchaseReturn.fromMap(Map<String, Object?> m) => PurchaseReturn(
+        id: m['id'] as int,
+        createdAt: DateTime.parse(m['created_at'] as String),
+        day: m['day'] as String,
+        purchaseId: m['purchase_id'] as int,
+        product: (m['product_name'] as String?) ?? '',
+        qty: _n(m['qty']),
+        net: _n(m['net']),
+        vat: _n(m['vat']),
+        gross: _n(m['gross']),
+        note: (m['note'] as String?) ?? '',
+        unpaid: (m['unpaid'] as int? ?? 0) == 1,
+        supplier: (m['supplier'] as String?) ?? '',
+        invoiceNo: (m['invoice_no'] as String?) ?? '',
+      );
+}
+
+/// A credit sale (receivable) or credit purchase (payable) with what has been paid so far.
+class CreditDoc {
+  CreditDoc({required this.id, required this.number, required this.party, required this.date, required this.total, required this.returned, required this.paid, this.detail = ''});
+  final int id;
+  final String number, party, date, detail;
+  final double total, returned, paid;
+  double get balance => total - returned - paid;
+  bool get settled => balance < 0.5;
 }

@@ -5,6 +5,8 @@ import 'package:provider/provider.dart';
 import '../data/app_state.dart';
 import '../data/models.dart';
 import '../data/repo.dart';
+import 'receipt_detail.dart';
+import 'records_screen.dart';
 import 'reports_screen.dart';
 import 'responsive.dart';
 import 'sdl_screen.dart';
@@ -151,6 +153,20 @@ class _TraScreenState extends State<TraScreen> {
     ];
     final right = <Widget>[
           GestureDetector(
+            onTap: () => Navigator.push(context, pageRoute(const RecordsHub())),
+            child: Container(
+              padding: const EdgeInsets.all(18),
+              decoration: BoxDecoration(color: K.card, borderRadius: BorderRadius.circular(24), border: Border.all(color: const Color(0x40C9FF55))),
+              child: Row(children: [
+                const Icon(Ic.receipt, color: K.lime),
+                const SizedBox(width: 14),
+                Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text('Sales & purchases records', style: t(13)), const SizedBox(height: 3), Text('Sales, purchases, returns, credit sales and credit purchases', style: t(10, w: FontWeight.w500, c: K.muted))])),
+                const Icon(Ic.chevron, color: K.dim),
+              ]),
+            ),
+          ),
+          const SizedBox(height: 10),
+          GestureDetector(
             onTap: () => Navigator.push(context, pageRoute(const ReportsScreen())),
             child: Container(
               padding: const EdgeInsets.all(18),
@@ -188,7 +204,7 @@ class _TraScreenState extends State<TraScreen> {
                     for (var i = 0; i < fiscal.length; i++)
                       GestureDetector(
                         behavior: HitTestBehavior.opaque,
-                        onTap: () async => showSheet(context, _ReceiptDetail(await s.repo.getSale(fiscal[i].id!))),
+                        onTap: () async => showSheet(context, ReceiptDetail(await s.repo.getSale(fiscal[i].id!))),
                         child: Container(
                           padding: const EdgeInsets.all(16),
                           decoration: BoxDecoration(border: i < fiscal.length - 1 ? const Border(bottom: BorderSide(color: Color(0x0FFFFFFF))) : null),
@@ -218,33 +234,3 @@ class _Kv extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(k, style: t(9, w: FontWeight.w800, c: Colors.black45, ls: 1)), const SizedBox(height: 4), Text(v, maxLines: 1, overflow: TextOverflow.ellipsis, style: mono(11, w: FontWeight.w700, c: K.ink))]));
 }
-
-class _ReceiptDetail extends StatelessWidget {
-  const _ReceiptDetail(this.sale);
-  final Sale sale;
-  @override
-  Widget build(BuildContext context) {
-    final s = context.read<AppState>();
-    return Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Text('Receipt #${sale.number}', style: t(18, w: FontWeight.w800)), Badge2(sale.uploaded ? 'Accepted' : sale.uploadStatus == 'failed' ? 'Rejected' : 'Queued', color: sale.uploaded ? K.lime : sale.uploadStatus == 'failed' ? K.danger : K.amber)]),
-      const SizedBox(height: 4),
-      Text('${DateFormat('d MMM yyyy HH:mm').format(sale.createdAt)}  -  ${sale.paymentType}', style: t(11, w: FontWeight.w500, c: K.muted)),
-      const SizedBox(height: 14),
-      for (final i in sale.items) Padding(padding: const EdgeInsets.only(bottom: 6), child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Expanded(child: Text('${fmtQ(i.qty)} x ${i.name}', style: t(12, w: FontWeight.w500))), Text(num0(i.amount), style: t(12))])),
-      const Divider(color: Color(0x1AFFFFFF)),
-      Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Text('Net ${num0(sale.totalExcl)}  -  VAT ${num0(sale.totalVat)}', style: t(11, w: FontWeight.w500, c: K.muted)), Text(money(sale.totalIncl), style: t(15, w: FontWeight.w800))]),
-      const SizedBox(height: 10),
-      Text('Verification: ${sale.rctvnum}', style: mono(10, c: K.muted)),
-      if (sale.ackMsg != null) Text('TRA: ${sale.ackCode} ${sale.ackMsg}', style: mono(10, c: K.muted)),
-      if (sale.lastError != null && !sale.uploaded) Padding(padding: const EdgeInsets.only(top: 6), child: Text('Last error: ${sale.lastError}', style: t(11, w: FontWeight.w600, c: K.danger))),
-      const SizedBox(height: 16),
-      Row(children: [
-        Expanded(child: LimeButton('Reprint', icon: Ic.printer, onTap: () async => toast(context, await s.printReceipt(sale)))),
-        const SizedBox(width: 10),
-        Expanded(child: LimeButton('PDF', icon: Ic.pdf, outline: true, onTap: () => s.printer.sharePdf(context, sale, s.cfg))),
-      ]),
-    ]);
-  }
-}
-
-String fmtQ(double q) => q == q.roundToDouble() ? q.toStringAsFixed(0) : q.toString();

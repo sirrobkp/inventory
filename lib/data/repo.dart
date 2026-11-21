@@ -284,18 +284,20 @@ class Repo {
     final monthStart = dayFmt.format(DateTime(now.year, now.month, 1));
     final t = (await d.rawQuery('SELECT COALESCE(SUM(total_incl),0) s, COUNT(*) c FROM sales WHERE day=?', [today])).first;
     final m = (await d.rawQuery('SELECT COALESCE(SUM(total_excl),0) n, COALESCE(SUM(cogs),0) c, COALESCE(SUM(total_incl),0) g, COALESCE(SUM(total_vat),0) v FROM sales WHERE day>=?', [monthStart])).first;
+    final tr = (await d.rawQuery('SELECT COALESCE(SUM(total_incl),0) s FROM sale_returns WHERE day=?', [today])).first;
+    final mr = (await d.rawQuery('SELECT COALESCE(SUM(total_excl),0) n, COALESCE(SUM(cogs),0) c, COALESCE(SUM(total_incl),0) g, COALESCE(SUM(total_vat),0) v FROM sale_returns WHERE day>=?', [monthStart])).first;
     final st = (await d.rawQuery('SELECT COALESCE(SUM(stock*cost),0) v, COUNT(*) c FROM products WHERE active=1')).first;
     final rows = await d.rawQuery('SELECT day, SUM(total_incl) s FROM sales WHERE day>=? GROUP BY day', [dayFmt.format(now.subtract(const Duration(days: 6)))]);
     final map = {for (final r in rows) r['day'] as String: (r['s'] as num).toDouble()};
     final week = [for (int i = 6; i >= 0; i--) map[dayFmt.format(now.subtract(Duration(days: i)))] ?? 0.0];
     final p = (await d.rawQuery("SELECT COUNT(*) c, COALESCE(SUM(total_incl),0) s FROM sales WHERE fiscal=1 AND upload_status IN ('queued','failed')")).first;
     return Dashboard(
-      todayRevenue: (t['s'] as num).toDouble(),
+      todayRevenue: (t['s'] as num).toDouble() - _g(tr['s']),
       todayCount: t['c'] as int,
-      monthNet: (m['n'] as num).toDouble(),
-      monthCogs: (m['c'] as num).toDouble(),
-      monthGross: (m['g'] as num).toDouble(),
-      monthOutputVat: (m['v'] as num).toDouble(),
+      monthNet: (m['n'] as num).toDouble() - _g(mr['n']),
+      monthCogs: (m['c'] as num).toDouble() - _g(mr['c']),
+      monthGross: (m['g'] as num).toDouble() - _g(mr['g']),
+      monthOutputVat: (m['v'] as num).toDouble() - _g(mr['v']),
       stockValue: (st['v'] as num).toDouble(),
       productCount: st['c'] as int,
       week: week,
@@ -311,7 +313,14 @@ class Repo {
     for (final r in await d.rawQuery('SELECT v.tax_code c, SUM(v.net) n, SUM(v.vat) t, SUM(v.gross) g FROM sale_vat v JOIN sales s ON s.id=v.sale_id WHERE s.day BETWEEN ? AND ? GROUP BY v.tax_code', [from, to])) {
       byClass[r['c'] as String] = VatLine(r['c'] as String, (r['n'] as num).toDouble(), (r['t'] as num).toDouble(), (r['g'] as num).toDouble());
     }
+    for (final r in await d.rawQuery('SELECT v.tax_code c, SUM(v.net) n, SUM(v.vat) t, SUM(v.gross) g FROM return_vat v JOIN sale_returns s ON s.id=v.return_id WHERE s.day BETWEEN ? AND ? GROUP BY v.tax_code', [from, to])) {
+      final code = r['c'] as String;
+      final cur = byClass[code];
+      byClass[code] = VatLine(code, (cur?.net ?? 0) - _g(r['n']), (cur?.vat ?? 0) - _g(r['t']), (cur?.gross ?? 0) - _g(r['g']));
+    }
     final s = (await d.rawQuery('SELECT COALESCE(SUM(cogs),0) c, COUNT(*) n FROM sales WHERE day BETWEEN ? AND ?', [from, to])).first;
+    final rc = (await d.rawQuery('SELECT COALESCE(SUM(cogs),0) c FROM sale_returns WHERE day BETWEEN ? AND ?', [from, to])).first;
+    final prr = (await d.rawQuery('SELECT COALESCE(SUM(net),0) n, COALESCE(SUM(vat),0) v FROM purchase_returns WHERE day BETWEEN ? AND ?', [from, to])).first;
     final pay = <String, double>{};
     for (final r in await d.rawQuery('SELECT payment_type p, SUM(total_incl) s FROM sales WHERE day BETWEEN ? AND ? GROUP BY payment_type', [from, to])) {
       pay[r['p'] as String] = (r['s'] as num).toDouble();
@@ -326,10 +335,10 @@ class Repo {
     final adj = (((await d.rawQuery("SELECT COALESCE(SUM(value),0) a FROM stock_movements WHERE kind='adjust' AND substr(created_at,1,10) BETWEEN ? AND ?", [from, to])).first['a']) as num).toDouble();
     return Statement(
       salesByClass: byClass,
-      cogs: (s['c'] as num).toDouble(),
+      cogs: (s['c'] as num).toDouble() - _g(rc['c']),
       expensesByCat: ex,
-      purchasesNet: (pu['n'] as num).toDouble(),
-      purchasesVat: (pu['v'] as num).toDouble(),
+      purchasesNet: (pu['n'] as num).toDouble() - _g(prr['n']),
+      purchasesVat: (pu['v'] as num).toDouble() - _g(prr['v']),
       expensesNet: (e['n'] as num).toDouble(),
       expensesVat: (e['v'] as num).toDouble(),
       paymentTotals: pay,
@@ -389,6 +398,8 @@ class Repo {
     Future<Map<String, Object?>> one(String sql) async => (await d.rawQuery(sql, [upTo])).first;
     final s = await one("SELECT COALESCE(SUM(total_incl),0) g, COALESCE(SUM(CASE WHEN payment_type='INVOICE' THEN total_incl ELSE 0 END),0) cr, COALESCE(SUM(total_excl),0) n, COALESCE(SUM(total_vat),0) v, COALESCE(SUM(cogs),0) c FROM sales WHERE day<=?");
     final p = await one('SELECT COALESCE(SUM(gross),0) g, COALESCE(SUM(net),0) n, COALESCE(SUM(vat),0) v, COALESCE(SUM(CASE WHEN paid=0 THEN gross ELSE 0 END),0) u FROM purchases WHERE date<=?');
+    final rs = await one('SELECT COALESCE(SUM(total_incl),0) g, COALESCE(SUM(CASE WHEN credit=1 THEN total_incl ELSE 0 END),0) cr, COALESCE(SUM(total_excl),0) n, COALESCE(SUM(total_vat),0) v, COALESCE(SUM(cogs),0) c FROM sale_returns WHERE day<=?');
+    final pr = await one('SELECT COALESCE(SUM(gross),0) g, COALESCE(SUM(net),0) n, COALESCE(SUM(vat),0) v, COALESCE(SUM(CASE WHEN unpaid=1 THEN gross ELSE 0 END),0) u FROM purchase_returns WHERE day<=?');
     final e = await one("SELECT COALESCE(SUM(net),0) n, COALESCE(SUM(vat),0) v, COALESCE(SUM(gross),0) g, COALESCE(SUM(CASE WHEN paid=0 THEN gross ELSE 0 END),0) u, COALESCE(SUM(CASE WHEN paid=0 AND category='Audit & other professional fees' THEN gross ELSE 0 END),0) au FROM expenses WHERE date<=?");
     final m = await one("SELECT COALESCE(SUM(CASE WHEN kind='opening' THEN value ELSE 0 END),0) o, COALESCE(SUM(CASE WHEN kind='adjust' THEN value ELSE 0 END),0) a FROM stock_movements WHERE substr(created_at,1,10)<=?");
     final l = <String, double>{};
@@ -407,8 +418,8 @@ class Repo {
       depT += ad;
     }
     return Cum(
-      salesGross: _g(s['g']), salesCredit: _g(s['cr']), salesNet: _g(s['n']), salesVat: _g(s['v']), cogs: _g(s['c']),
-      purchGross: _g(p['g']), purchNet: _g(p['n']), purchVat: _g(p['v']), purchUnpaid: _g(p['u']),
+      salesGross: _g(s['g']) - _g(rs['g']), salesCredit: _g(s['cr']) - _g(rs['cr']), salesNet: _g(s['n']) - _g(rs['n']), salesVat: _g(s['v']) - _g(rs['v']), cogs: _g(s['c']) - _g(rs['c']),
+      purchGross: _g(p['g']) - _g(pr['g']), purchNet: _g(p['n']) - _g(pr['n']), purchVat: _g(p['v']) - _g(pr['v']), purchUnpaid: _g(p['u']) - _g(pr['u']),
       expNet: _g(e['n']), expVat: _g(e['v']), expGross: _g(e['g']), expUnpaid: _g(e['u']), auditUnpaid: _g(e['au']),
       openingStock: _g(m['o']), adjustments: _g(m['a']),
       capital: l['capital'] ?? 0, drawings: l['drawings'] ?? 0, loanIn: l['loan_in'] ?? 0, loanOut: l['loan_out'] ?? 0,
@@ -478,5 +489,220 @@ class Repo {
 
   Future<void> savePayroll(String period, int employeeId, double basic, double allowances, double other) async {
     await (await _d).insert('payroll', {'period': period, 'employee_id': employeeId, 'basic': basic, 'allowances': allowances, 'other': other}, conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  // ================================================================= record lists
+  Future<List<Sale>> salesList(String from, String to) async {
+    final r = await (await _d).query('sales', where: 'day BETWEEN ? AND ?', whereArgs: [from, to], orderBy: 'id DESC');
+    return r.map((e) => Sale.fromMap(e)).toList();
+  }
+
+  Future<List<Purchase>> purchasesList(String from, String to) async {
+    final r = await (await _d).rawQuery('SELECT p.*, COALESCE((SELECT SUM(qty) FROM purchase_returns WHERE purchase_id=p.id),0) returned FROM purchases p WHERE p.date BETWEEN ? AND ? ORDER BY p.id DESC', [from, to]);
+    return r.map(Purchase.fromMap).toList();
+  }
+
+  Future<List<SaleReturn>> saleReturns(String from, String to) async {
+    final r = await (await _d).rawQuery('SELECT r.*, s.gc, s.fiscal_no sale_fiscal_no FROM sale_returns r JOIN sales s ON s.id=r.sale_id WHERE r.day BETWEEN ? AND ? ORDER BY r.id DESC', [from, to]);
+    return r.map((e) => SaleReturn.fromMap(e)).toList();
+  }
+
+  Future<SaleReturn> saleReturn(int id) async {
+    final d = await _d;
+    final row = (await d.rawQuery('SELECT r.*, s.gc, s.fiscal_no sale_fiscal_no FROM sale_returns r JOIN sales s ON s.id=r.sale_id WHERE r.id=?', [id])).first;
+    final items = (await d.query('sale_return_items', where: 'return_id=?', whereArgs: [id], orderBy: 'id')).map(SaleItem.fromMap).toList();
+    final vat = (await d.query('return_vat', where: 'return_id=?', whereArgs: [id])).map((e) => VatLine(e['tax_code'] as String, _g(e['net']), _g(e['vat']), _g(e['gross']))).toList();
+    return SaleReturn.fromMap(row, items: items, vat: vat);
+  }
+
+  Future<List<PurchaseReturn>> purchaseReturns(String from, String to) async {
+    final r = await (await _d).rawQuery('SELECT r.*, p.supplier, p.invoice_no FROM purchase_returns r JOIN purchases p ON p.id=r.purchase_id WHERE r.day BETWEEN ? AND ? ORDER BY r.id DESC', [from, to]);
+    return r.map(PurchaseReturn.fromMap).toList();
+  }
+
+  // ------------------------------------------------------------ credit documents
+  Future<List<CreditDoc>> creditSales() async {
+    final r = await (await _d).rawQuery(
+        "SELECT s.id, s.gc, s.fiscal_no, s.fiscal, s.day, s.customer_name, s.total_incl, "
+        "COALESCE((SELECT SUM(amount) FROM equity_ledger WHERE type='receivable_collected' AND ref_type='sale' AND ref_id=s.id),0) paid, "
+        "COALESCE((SELECT SUM(total_incl) FROM sale_returns WHERE sale_id=s.id),0) returned "
+        "FROM sales s WHERE s.payment_type='INVOICE' ORDER BY s.id DESC");
+    return [
+      for (final e in r)
+        CreditDoc(
+          id: e['id'] as int,
+          number: ((e['fiscal'] as int?) ?? 1) == 1 ? (((e['fiscal_no'] as String?) ?? '').isNotEmpty ? e['fiscal_no'] as String : ((e['gc'] as int?) ?? 0).toString().padLeft(6, '0')) : 'NF-${e['id']}',
+          party: ((e['customer_name'] as String?) ?? '').isEmpty ? 'Customer' : e['customer_name'] as String,
+          date: e['day'] as String,
+          total: _g(e['total_incl']),
+          returned: _g(e['returned']),
+          paid: _g(e['paid']),
+        ),
+    ];
+  }
+
+  Future<List<CreditDoc>> creditPurchases() async {
+    final r = await (await _d).rawQuery(
+        "SELECT p.id, p.date, p.supplier, p.invoice_no, p.product_name, p.gross, "
+        "COALESCE((SELECT SUM(amount) FROM equity_ledger WHERE type='supplier_paid' AND ref_type='purchase' AND ref_id=p.id),0) paid, "
+        "COALESCE((SELECT SUM(gross) FROM purchase_returns WHERE purchase_id=p.id),0) returned "
+        "FROM purchases p WHERE p.paid=0 ORDER BY p.id DESC");
+    return [
+      for (final e in r)
+        CreditDoc(
+          id: e['id'] as int,
+          number: ((e['invoice_no'] as String?) ?? '').isEmpty ? 'PUR-${e['id']}' : e['invoice_no'] as String,
+          party: ((e['supplier'] as String?) ?? '').isEmpty ? 'Supplier' : e['supplier'] as String,
+          date: e['date'] as String,
+          total: _g(e['gross']),
+          returned: _g(e['returned']),
+          paid: _g(e['paid']),
+          detail: (e['product_name'] as String?) ?? '',
+        ),
+    ];
+  }
+
+  /// kind: 'sale' (customer pays a credit sale) or 'purchase' (you pay a credit purchase).
+  Future<void> addPayment({required String kind, required int refId, required double amount, required DateTime date, String note = ''}) async {
+    await (await _d).insert('equity_ledger', {
+      'date': dayFmt.format(date),
+      'type': kind == 'sale' ? 'receivable_collected' : 'supplier_paid',
+      'amount': amount,
+      'note': note,
+      'ref_type': kind,
+      'ref_id': refId,
+    });
+  }
+
+  Future<List<Map<String, Object?>>> payments(String kind, int refId) async =>
+      (await _d).query('equity_ledger', where: 'ref_type=? AND ref_id=?', whereArgs: [kind, refId], orderBy: 'date DESC, id DESC');
+
+  // ----------------------------------------------------------------- returns
+  Future<List<ReturnableItem>> returnableItems(int saleId) async {
+    final d = await _d;
+    final items = (await d.query('sale_items', where: 'sale_id=?', whereArgs: [saleId], orderBy: 'id')).map(SaleItem.fromMap).toList();
+    final out = <ReturnableItem>[];
+    for (final it in items) {
+      final done = _g((await d.rawQuery('SELECT COALESCE(SUM(qty),0) q FROM sale_return_items WHERE sale_item_id=?', [it.id])).first['q']);
+      out.add(ReturnableItem(it, it.qty - done));
+    }
+    return out;
+  }
+
+  /// Creates a credit note: validates quantities, books the reversal (revenue, VAT, COGS), restocks the items.
+  /// [status]: 'queued' (will be sent to the supplier API), 'manual' (issue it yourself) or 'n/a' (non-fiscal sale).
+  Future<int> createSaleReturn({required int saleId, required Map<int, double> qtyByItemId, String reason = '', required String status}) async {
+    final d = await _d;
+    return d.transaction<int>((t) async {
+      final sale = Sale.fromMap((await t.query('sales', where: 'id=?', whereArgs: [saleId])).first);
+      final items = (await t.query('sale_items', where: 'sale_id=?', whereArgs: [saleId])).map(SaleItem.fromMap).toList();
+      final now = DateTime.now();
+      final classGross = <String, double>{};
+      var cogs = 0.0, total = 0.0;
+      final rows = <Map<String, Object?>>[];
+      for (final it in items) {
+        final q = qtyByItemId[it.id] ?? 0;
+        if (q <= 0) continue;
+        final done = _g((await t.rawQuery('SELECT COALESCE(SUM(qty),0) q FROM sale_return_items WHERE sale_item_id=?', [it.id])).first['q']);
+        if (q > it.qty - done + 1e-9) throw StateError('Only ${fmtQty(it.qty - done)} of ${it.name} can still be returned');
+        final amount = r2(it.unitPrice * q);
+        classGross[it.taxCode] = (classGross[it.taxCode] ?? 0) + amount;
+        total += amount;
+        cogs += it.cost * q;
+        rows.add({'sale_item_id': it.id, 'product_id': it.productId, 'name': it.name, 'sku': it.sku, 'qty': q, 'unit_price': it.unitPrice, 'amount': amount, 'cost': it.cost, 'tax_code': it.taxCode});
+      }
+      if (rows.isEmpty) throw StateError('Select at least one item to return');
+      var net = 0.0, vat = 0.0;
+      final vatRows = <Map<String, Object?>>[];
+      classGross.forEach((code, gross) {
+        final sp = splitGross(r2(gross), code);
+        net += sp.net;
+        vat += sp.vat;
+        vatRows.add({'tax_code': code, 'net': sp.net, 'vat': sp.vat, 'gross': r2(gross)});
+      });
+      final id = await t.insert('sale_returns', {
+        'created_at': now.toIso8601String(),
+        'day': dayFmt.format(now),
+        'sale_id': saleId,
+        'reason': reason,
+        'total_excl': r2(net),
+        'total_vat': r2(vat),
+        'total_incl': r2(total),
+        'cogs': r2(cogs),
+        'credit': sale.paymentType == 'INVOICE' ? 1 : 0,
+        'upload_status': sale.fiscal ? status : 'n/a',
+      });
+      for (final v in vatRows) {
+        await t.insert('return_vat', {...v, 'return_id': id});
+      }
+      for (final r in rows) {
+        await t.insert('sale_return_items', {...r, 'return_id': id});
+        if (r['product_id'] != null) {
+          await t.rawUpdate('UPDATE products SET stock = stock + ?, updated_at=? WHERE id=?', [r['qty'], now.toIso8601String(), r['product_id']]);
+          await t.insert('stock_movements', {'product_id': r['product_id'], 'delta': r['qty'], 'reason': 'Sales return', 'ref': 'CN-$id', 'created_at': now.toIso8601String(), 'kind': 'sale_return', 'value': 0});
+        }
+      }
+      return id;
+    });
+  }
+
+  Future<int> createPurchaseReturn({required int purchaseId, required double qty, String note = ''}) async {
+    final d = await _d;
+    return d.transaction<int>((t) async {
+      final p = (await t.query('purchases', where: 'id=?', whereArgs: [purchaseId])).first;
+      final pq = _g(p['qty']);
+      final done = _g((await t.rawQuery('SELECT COALESCE(SUM(qty),0) q FROM purchase_returns WHERE purchase_id=?', [purchaseId])).first['q']);
+      if (qty <= 0) throw StateError('Enter a quantity');
+      if (qty > pq - done + 1e-9) throw StateError('Only ${fmtQty(pq - done)} can still be returned');
+      final pid = p['product_id'] as int?;
+      if (pid != null) {
+        final stock = _g((await t.query('products', columns: ['stock'], where: 'id=?', whereArgs: [pid])).first['stock']);
+        if (stock < qty) throw StateError('Only ${fmtQty(stock)} in stock - cannot return more than you hold');
+      }
+      final ratio = qty / pq;
+      final net = r2(_g(p['net']) * ratio), vat = r2(_g(p['vat']) * ratio);
+      final now = DateTime.now();
+      final id = await t.insert('purchase_returns', {
+        'created_at': now.toIso8601String(),
+        'day': dayFmt.format(now),
+        'purchase_id': purchaseId,
+        'product_id': pid,
+        'product_name': p['product_name'],
+        'qty': qty,
+        'net': net,
+        'vat': vat,
+        'gross': r2(net + vat),
+        'note': note,
+        'unpaid': (p['paid'] as int? ?? 1) == 0 ? 1 : 0,
+      });
+      if (pid != null) {
+        await t.rawUpdate('UPDATE products SET stock = stock - ?, updated_at=? WHERE id=?', [qty, now.toIso8601String(), pid]);
+        await t.insert('stock_movements', {'product_id': pid, 'delta': -qty, 'reason': 'Purchase return', 'ref': 'DN-$id', 'created_at': now.toIso8601String(), 'kind': 'purchase_return', 'value': 0});
+      }
+      return id;
+    });
+  }
+
+  // --------------------------------------------------------- credit-note upload queue
+  Future<List<SaleReturn>> queuedReturns() async {
+    final d = await _d;
+    final ids = await d.query('sale_returns', columns: ['id'], where: "upload_status='queued'", orderBy: 'id');
+    return [for (final r in ids) await saleReturn(r['id'] as int)];
+  }
+
+  Future<void> markReturnFiscalised(int id, {String fiscalNo = '', String verifyCode = '', String verifyUrl = '', String ackCode = '', String ackMsg = ''}) async {
+    await (await _d).update('sale_returns', {'upload_status': 'uploaded', 'fiscal_no': fiscalNo, 'verify_code': verifyCode, 'verify_url': verifyUrl, 'ack_code': ackCode, 'ack_msg': ackMsg, 'last_error': null}, where: 'id=?', whereArgs: [id]);
+  }
+
+  Future<void> markReturnFailed(int id, String err) async {
+    await (await _d).rawUpdate("UPDATE sale_returns SET upload_status='failed', attempts=attempts+1, last_error=? WHERE id=?", [err, id]);
+  }
+
+  Future<void> noteReturnAttempt(int id, String err) async {
+    await (await _d).rawUpdate('UPDATE sale_returns SET attempts=attempts+1, last_error=? WHERE id=?', [err, id]);
+  }
+
+  Future<void> requeueReturn(int id) async {
+    await (await _d).update('sale_returns', {'upload_status': 'queued'}, where: "id=? AND upload_status IN ('failed','manual')", whereArgs: [id]);
   }
 }

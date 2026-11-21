@@ -212,6 +212,20 @@ class TraService {
           await repo.markFailed(s.id!, '${r.code}: ${r.msg}');
         }
       }
+      // credit notes (sales returns) go after the receipts they refer to
+      for (final cn in await repo.queuedReturns()) {
+        final orig = await repo.getSale(cn.saleId);
+        final r = await vfd.submitReturn(cn, orig);
+        if (r.ok) {
+          await repo.markReturnFiscalised(cn.id, fiscalNo: r.receiptNo, verifyCode: r.verifyCode, verifyUrl: r.verifyUrl, ackCode: r.code, ackMsg: r.msg);
+          sent++;
+        } else if (r.retryLater) {
+          await repo.noteReturnAttempt(cn.id, r.msg);
+          break;
+        } else {
+          await repo.markReturnFailed(cn.id, '${r.code}: ${r.msg}');
+        }
+      }
     } finally {
       _busy = false;
     }

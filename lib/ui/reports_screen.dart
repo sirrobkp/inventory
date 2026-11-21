@@ -333,7 +333,7 @@ class _LedgerFormState extends State<_LedgerForm> {
           isExpanded: true,
           decoration: dec('Type'),
           style: t(13, w: FontWeight.w500),
-          items: [for (final e in _ledgerTypes.entries) DropdownMenuItem(value: e.key, child: Text(e.value))],
+          items: [for (final e in _ledgerTypes.entries) if (e.key != 'receivable_collected' && e.key != 'supplier_paid') DropdownMenuItem(value: e.key, child: Text(e.value))], // customer/supplier payments are recorded on the Credit sales / Credit purchases pages
           onChanged: (v) => setState(() => type = v ?? type),
         ),
         const SizedBox(height: 12),

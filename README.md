@@ -37,3 +37,17 @@ setup lives in `tool/prepare_macos.sh`, `tool/patch_macos_pods.sh` and `tool/pre
 - Sharing/exports: desktop shows a Save-As dialog instead of a share sheet.
 - Secrets on macOS are stored in the local database (base64, not encrypted) because Keychain needs a signing entitlement.
 - macOS app is ad-hoc signed: after downloading, right-click > Open (or `xattr -cr KiboTrade.app`).
+
+## Records, returns and credit
+TRA tab > "Sales & purchases records": Sales, Purchases, Sales returns (credit notes), Purchase returns (debit notes),
+Credit sales (receive payments per customer sale) and Credit purchases (pay suppliers per purchase).
+Returns reverse revenue, VAT, cost of sales and stock; credit payments feed receivables / payables, so the income
+statement, balance sheet, cash flow and VAT paper stay consistent. A sale made through a supplier API whose profile has a
+"creditNote" section sends credit notes automatically; otherwise issue the credit note in the supplier portal and mark it issued.
+Not covered: Z-reports do not subtract returns (the supplier files those).
+
+## Cloud backup (Firebase)
+Settings > Cloud backup. Uses Firebase Auth (email/password) + Firestore over the public REST API with plain `http`:
+no Firebase plugins are compiled in, so no CocoaPods / Swift Package Manager / Gradle changes and it works on every platform.
+Local SQLite stays the live store (offline-first). Paste the security rules shown by "Copy Firestore security rules".
+Restore REPLACES local data with the latest snapshot. This is backup/restore, not live multi-device sync.
