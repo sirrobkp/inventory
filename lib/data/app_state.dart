@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 
 import '../services/cloud_service.dart';
 import '../services/generic_vfd_service.dart';
+import '../services/license_service.dart';
 import '../services/printer_service.dart';
 import '../services/report_service.dart';
 import '../services/tra_service.dart';
@@ -17,6 +18,10 @@ class AppState extends ChangeNotifier {
   late final GenericVfdService vfd = GenericVfdService(repo);
   late final TraService tra = TraService(repo, vfd);
   late final CloudService cloud = CloudService(repo);
+  late final LicenseService licenseSvc = LicenseService(repo);
+  LicenseInfo license = const LicenseInfo(LicenseState.disabled);
+  DateTime _lastLicenseSync = DateTime(2000);
+  String? licenseError;
   bool _backingUp = false;
   late final ReportService reports = ReportService(repo);
   final printer = PrinterService();
@@ -45,10 +50,14 @@ class AppState extends ChangeNotifier {
 
   // ------------------------------------------------------------------ lifecycle
   Future<void> init() async {
+    if (LicenseService.configured && (await repo.getSetting('lic_first_run')) == null) {
+      await repo.setSetting('lic_first_run', DateTime.now().toUtc().toIso8601String());
+    }
     await refresh();
     _timer = Timer.periodic(const Duration(seconds: 60), (_) {
       syncNow(silent: true);
       maybeAutoBackup();
+      maybeLicenseSync();
     });
     _conn = Connectivity().onConnectivityChanged.listen((r) {
       online = !r.contains(ConnectivityResult.none);
@@ -57,6 +66,22 @@ class AppState extends ChangeNotifier {
     });
     unawaited(syncNow(silent: true));
     unawaited(maybeAutoBackup());
+    unawaited(maybeLicenseSync());
+  }
+
+  /// Registers/heartbeats with the subscription server at most every 30 minutes (or now when [force]).
+  Future<void> maybeLicenseSync({bool force = false}) async {
+    if (!LicenseService.configured || !online) return;
+    if (!force && DateTime.now().difference(_lastLicenseSync) < const Duration(minutes: 30)) return;
+    _lastLicenseSync = DateTime.now();
+    licenseError = await licenseSvc.sync(cfg, {
+      'statMonthRevenue': dash.monthGross,
+      'statTodaySales': dash.todayCount,
+      'statPending': dash.pendingCount,
+      'statLowStock': lowStockCount,
+      'statProducts': products.length,
+    });
+    await refresh();
   }
 
   /// Cloud backup at most every 6 hours, only when enabled, configured and online.
@@ -86,6 +111,11 @@ class AppState extends ChangeNotifier {
     products = await repo.products();
     recent = await repo.recentSales();
     dash = await repo.dashboard();
+    license = LicenseService.evaluate(cfg, DateTime.now());
+    if (LicenseService.configured) {
+      final c = DateTime.tryParse(cfg['lic_clock'] ?? '');
+      if (c == null || DateTime.now().isAfter(c)) unawaited(repo.setSetting('lic_clock', DateTime.now().toUtc().toIso8601String()));
+    }
     notifyListeners();
   }
 

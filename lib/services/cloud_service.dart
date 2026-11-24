@@ -121,7 +121,7 @@ service cloud.firestore {
       if (table == 'settings') {
         rows = rows.where((r) {
           final k = (r['key'] as String?) ?? '';
-          return !k.startsWith('secret:') && k != 'vfd_last_response';
+          return !k.startsWith('secret:') && !k.startsWith('lic_') && k != 'vfd_last_response';
         }).toList();
       }
       counts[table] = rows.length;
@@ -231,7 +231,7 @@ service cloud.firestore {
     final db = await Db.instance;
     final keep = (await db.query('settings')).where((r) {
       final k = (r['key'] as String?) ?? '';
-      return k.startsWith('secret:') || k.startsWith('cloud_') || k == 'printer_mac' || k == 'printer_name';
+      return k.startsWith('secret:') || k.startsWith('cloud_') || k.startsWith('lic_') || k == 'printer_mac' || k == 'printer_name';
     }).toList();
     await db.transaction((t) async {
       for (final table in _tables.reversed) {
@@ -239,7 +239,7 @@ service cloud.firestore {
       }
       for (final table in _tables) {
         for (final row in data[table]!) {
-          if (table == 'settings' && ((row['key'] as String?) ?? '').startsWith('cloud_')) continue;
+          if (table == 'settings' && (((row['key'] as String?) ?? '').startsWith('cloud_') || ((row['key'] as String?) ?? '').startsWith('lic_'))) continue;
           await t.insert(table, row, conflictAlgorithm: ConflictAlgorithm.replace);
         }
       }

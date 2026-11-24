@@ -14,6 +14,7 @@ import '../services/tra_service.dart';
 import 'icons.dart';
 import '../data/platform_info.dart';
 import 'cloud_panel.dart';
+import 'license_ui.dart';
 import 'supplier_panel.dart';
 import 'theme.dart';
 import 'widgets.dart';
@@ -195,6 +196,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
             }, child: Row(children: [const Icon(Ic.printer, size: 18, color: K.lime), const SizedBox(width: 10), Expanded(child: Text(p.name, style: t(12))), Text(p.macAdress, style: mono(9, c: K.dim))])),
           ),
         ],
+        h('Subscription'),
+        const SubscriptionPanel(),
         h('Cloud backup (Firebase)'),
         const CloudPanel(),
         h('Data'),

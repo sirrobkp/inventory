@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 
 import '../data/app_state.dart';
 import 'icons.dart';
+import 'license_ui.dart';
 import 'responsive.dart';
 import 'theme.dart';
 import 'widgets.dart';
@@ -18,6 +19,7 @@ class HomeScreen extends StatelessWidget {
     final low = s.products.where((p) => p.low).take(3).toList();
     final name = (s.cfg['biz_name'] ?? '').isNotEmpty ? s.cfg['biz_name']! : 'Kibo Trade';
     final left = <Widget>[
+          const LicenseBanner(),
           Glass(
             radius: 30,
             padding: const EdgeInsets.all(20),

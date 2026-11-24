@@ -5,6 +5,7 @@ import '../data/app_state.dart';
 import 'home_screen.dart';
 import 'icons.dart';
 import 'inventory_screen.dart';
+import 'license_ui.dart';
 import 'pos_screen.dart';
 import 'responsive.dart';
 import 'settings_screen.dart';
@@ -25,6 +26,7 @@ class Shell extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final s = context.watch<AppState>();
+    if (s.license.locked) return const LicenseGate(); // expired / switched off / unverifiable subscription
     const pages = [HomeScreen(), InventoryScreen(), PosScreen(), TraScreen()];
     final wide = isWide(context);
     final page = AnimatedSwitcher(
